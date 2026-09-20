@@ -89,6 +89,21 @@ async function main(): Promise<void> {
   }
   await owner.systemSetting.deleteMany({ where: { tenantId: tenant.id, key: { in: ['allowAnonymousComplaints', 'maintenanceMode'] } } });
   await seedPlatform(owner);
+
+  // Segunda empresa, só para os testes de suspensão comercial (não mexe na "demo").
+  const susp = 'e2e-suspensao';
+  let t2 = await owner.tenant.findUnique({ where: { slug: susp } });
+  if (!t2) {
+    const r2 = await provisionTenant(owner, {
+      slug: susp,
+      companyName: 'Empresa Suspensão E2E',
+      adminEmail: `admin@${susp}.com`,
+      adminFullName: 'Admin Suspensão',
+      adminPasswordHash: await argon2.hash('Senha-Forte-123!', { type: argon2.argon2id }),
+    });
+    t2 = await owner.tenant.findUniqueOrThrow({ where: { id: r2.tenantId } });
+  }
+  await owner.tenant.update({ where: { id: t2.id }, data: { status: 'ACTIVE' } });
   console.warn(`Tenant "${slug}" pronto.`);
   await owner.$disconnect();
 }
