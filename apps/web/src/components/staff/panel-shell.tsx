@@ -2,14 +2,14 @@
 
 import { Alert, Button, cn, Skeleton } from '@ouvion/ui';
 import { useQuery } from '@tanstack/react-query';
-import { Bell, ChevronsLeft, ChevronsRight, FolderOpen, Handshake, LogOut, ScrollText, Settings, UserCog, Users } from 'lucide-react';
+import { Bell, ChevronsLeft, ListChecks, ChevronsRight, FolderOpen, Handshake, LogOut, ScrollText, Settings, UserCog, Users } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 
 import { useBranding } from '@/components/branding-context';
-import { staffApi, type Me } from '@/lib/staff-client';
+import { staffApi, type ActivationStatus, type Me } from '@/lib/staff-client';
 
 const MeCtx = createContext<Me | null>(null);
 
@@ -35,6 +35,7 @@ export function PanelShell({ tenant, children }: { tenant: string; children: Rea
   const tr = useTranslations('roles');
   const tc = useTranslations('common');
   const tn = useTranslations('notifs');
+  const tw = useTranslations('onboard.activation');
   const branding = useBranding();
   const router = useRouter();
   const pathname = usePathname();
@@ -65,8 +66,12 @@ export function PanelShell({ tenant, children }: { tenant: string; children: Rea
   }
 
   const role = me.data?.role;
+  // Empresa ainda em período de teste: o ADMIN vê o caminho de ativação em toda tela do painel.
+  const activation = useQuery({ queryKey: ['activation', tenant], queryFn: () => staffApi(tenant).get<ActivationStatus>('onboarding/activation'), enabled: role === 'ADMIN', staleTime: 30_000 });
+  const inTrial = activation.data?.tenantStatus === 'TRIAL';
   const nav: Array<{ href: string; label: string; icon: typeof Bell; badge?: number }> = [
     { href: `/${tenant}/painel`, label: t('cases'), icon: FolderOpen },
+    ...(inTrial ? [{ href: `/${tenant}/painel/ativacao`, label: t('activation'), icon: ListChecks }] : []),
     ...(role === 'ADMIN' ? [{ href: `/${tenant}/painel/usuarios`, label: t('users'), icon: Users }] : []),
     ...(role === 'ADMIN' ? [{ href: `/${tenant}/painel/conflitos`, label: t('conflicts'), icon: Handshake }] : []),
     ...(role === 'ADMIN' || role === 'AUDITOR' ? [{ href: `/${tenant}/painel/auditoria`, label: t('audit'), icon: ScrollText }] : []),
@@ -147,7 +152,21 @@ export function PanelShell({ tenant, children }: { tenant: string; children: Rea
           ) : me.isError ? (
             <Alert tone="danger">{t('loadError')}</Alert>
           ) : (
-            <MeCtx.Provider value={me.data}>{children}</MeCtx.Provider>
+            <MeCtx.Provider value={me.data}>
+              {inTrial && !pathname.endsWith('/ativacao') && (
+                <div className="mb-6" data-testid="trial-banner">
+                  <Alert tone="info">
+                    <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                      {tw('banner')}
+                      <Link href={`/${tenant}/painel/ativacao`} className="font-medium">
+                        {tw('bannerLink')}
+                      </Link>
+                    </span>
+                  </Alert>
+                </div>
+              )}
+              {children}
+            </MeCtx.Provider>
           )}
         </div>
       </main>

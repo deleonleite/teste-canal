@@ -32,6 +32,8 @@ function Detail({ id }: { id: string }) {
   const [reason, setReason] = useState('');
   const [fieldError, setFieldError] = useState<string | undefined>();
   const [error, setError] = useState<string | null>(null);
+  const [resendOpen, setResendOpen] = useState(false);
+  const [resent, setResent] = useState<{ devInviteUrl?: string } | null>(null);
 
   const q = useQuery({ queryKey: ['platform-tenant', id], queryFn: () => platformApi.get<TenantRow>(`tenants/${id}`) });
   const suspended = q.data?.status === 'SUSPENDED';
@@ -50,6 +52,20 @@ function Detail({ id }: { id: string }) {
       await Promise.all([qc.invalidateQueries({ queryKey: ['platform-tenant', id] }), qc.invalidateQueries({ queryKey: ['platform-tenants'] })]);
     },
     onError: (e) => setError(e instanceof ApiError && e.status === 409 ? t('conflict') : t('actionError')),
+  });
+
+  const resend = useMutation({
+    mutationFn: () => platformApi.post<{ devInviteUrl?: string }>(`tenants/${id}/resend-invite`),
+    onSuccess: async (r) => {
+      toast.success(t('resent'));
+      setResent(r);
+      setResendOpen(false);
+      await qc.invalidateQueries({ queryKey: ['platform-tenant', id] });
+    },
+    onError: (e) => {
+      setResendOpen(false);
+      toast.error(e instanceof ApiError && e.status === 409 ? t('resendConflict') : t('actionError'));
+    },
   });
 
   const back = (
@@ -108,6 +124,11 @@ function Detail({ id }: { id: string }) {
           </Row>
           <Row label={t('expires')}>{x.subscriptionExpiresAt ? date(x.subscriptionExpiresAt) : <span className="text-fg-2">{t('noExpiry')}</span>}</Row>
           <Row label={t('dpo')}>{x.dpo ? [x.dpo.name, x.dpo.email].filter(Boolean).join(' · ') : <span className="text-fg-2">{t('noDpo')}</span>}</Row>
+          {x.invite && (
+            <Row label={t('inviteRow')}>
+              <span data-testid="invite-state">{t(`inviteState.${x.invite.state}`, { email: x.invite.email, date: date(x.invite.expiresAt) })}</span>
+            </Row>
+          )}
           <Row label={t('onbEscalation')}>{done(x.onboarding.escalationVerified)}</Row>
           <Row label={t('onbTotp')}>{done(x.onboarding.escalationTotpEnrolled)}</Row>
           <Row label={t('colCreated')}>{date(x.createdAt)}</Row>
@@ -120,6 +141,11 @@ function Detail({ id }: { id: string }) {
             {suspended ? t('reactivate') : t('suspend')}
           </Button>
         )}
+        {me.role === 'SUPER_ADMIN' && x.invite && x.invite.state !== 'accepted' && (
+          <Button variant="secondary" onClick={() => setResendOpen(true)} data-testid="resend-invite">
+            {t('resend')}
+          </Button>
+        )}
         <Button variant="secondary" disabled aria-describedby="rs-hint">
           {t('requestSupport')}
         </Button>
@@ -127,6 +153,19 @@ function Detail({ id }: { id: string }) {
           {t('requestSupportHint')}
         </span>
       </div>
+
+      {resent?.devInviteUrl && (
+        <Alert tone="info" title={t('devLinkTitle')}>
+          <p>{t('devLinkBody')}</p>
+          <a href={resent.devInviteUrl} className="break-all" data-testid="dev-invite-link">
+            {resent.devInviteUrl}
+          </a>
+        </Alert>
+      )}
+
+      <ConfirmDialog open={resendOpen} title={t('resendTitle')} confirmLabel={t('resend')} busy={resend.isPending} onClose={() => setResendOpen(false)} onConfirm={() => resend.mutate()}>
+        <p>{t('resendBody')}</p>
+      </ConfirmDialog>
 
       <ConfirmDialog
         open={open}

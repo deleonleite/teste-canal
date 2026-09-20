@@ -63,7 +63,18 @@ export interface TenantRow {
   createdAt: string;
   dpo: { name: string | null; email: string | null } | null;
   onboarding: { escalationVerified: boolean; escalationTotpEnrolled: boolean };
+  invite: { email: string; state: 'pending' | 'expired' | 'revoked' | 'accepted'; expiresAt: string } | null;
   counts: { users: number; complaints: number; complaintsThisMonth: number };
+}
+
+export interface CreateTenantResult {
+  tenantId: string;
+  slug: string;
+  mode: 'invite' | 'temp_password';
+  sentTo?: string;
+  expiresAt?: string;
+  devInviteUrl?: string;
+  temporaryPassword?: string;
 }
 
 export interface InternalUser {

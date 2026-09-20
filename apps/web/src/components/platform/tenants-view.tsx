@@ -1,13 +1,15 @@
 'use client';
 
-import { Alert, Badge, Card, EmptyState, Select, Skeleton } from '@ouvion/ui';
+import { Alert, Badge, Button, Card, EmptyState, Select, Skeleton } from '@ouvion/ui';
 import { useQuery } from '@tanstack/react-query';
-import { Ban, Building2, CircleCheck, Clock, XCircle } from 'lucide-react';
+import { Ban, Building2, CircleCheck, Clock, Plus, XCircle } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { useState } from 'react';
 
 import { platformApi, type TenantRow } from '@/lib/platform-client';
+import { NewTenantDialog } from './new-tenant-dialog';
+import { usePlatformMe } from './platform-shell';
 import { RoleGate } from './shared';
 
 const STATUSES = ['ACTIVE', 'TRIAL', 'SUSPENDED', 'CANCELLED'] as const;
@@ -40,8 +42,10 @@ export function TenantsView() {
 function TenantsList() {
   const t = useTranslations('platform.tenants');
   const locale = useLocale();
+  const me = usePlatformMe();
   const [status, setStatus] = useState('');
   const [q, setQ] = useState('');
+  const [creating, setCreating] = useState(false);
 
   const qs = new URLSearchParams();
   if (status) qs.set('status', status);
@@ -52,9 +56,17 @@ function TenantsList() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-1">
-        <h1 className="text-h1">{t('title')}</h1>
-        <p className="max-w-prose text-fg-2">{t('subtitle')}</p>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div className="flex flex-col gap-1">
+          <h1 className="text-h1">{t('title')}</h1>
+          <p className="max-w-prose text-fg-2">{t('subtitle')}</p>
+        </div>
+        {me.role === 'SUPER_ADMIN' && (
+          <Button onClick={() => setCreating(true)} data-testid="new-tenant">
+            <Plus className="h-4 w-4" aria-hidden="true" />
+            {t('new')}
+          </Button>
+        )}
       </div>
 
       {!status && !q && list.data && (
@@ -133,6 +145,7 @@ function TenantsList() {
           ))}
         </ul>
       )}
+      <NewTenantDialog open={creating} onClose={() => setCreating(false)} />
     </div>
   );
 }

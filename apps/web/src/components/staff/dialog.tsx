@@ -16,6 +16,7 @@ export function ConfirmDialog({
   danger,
   busy,
   confirmDisabled,
+  cancelLabel,
   onConfirm,
   onClose,
 }: {
@@ -26,6 +27,8 @@ export function ConfirmDialog({
   danger?: boolean;
   busy?: boolean;
   confirmDisabled?: boolean;
+  /** Texto do botão que fecha (padrão: Cancelar). */
+  cancelLabel?: string;
   onConfirm: () => void;
   onClose: () => void;
 }) {
@@ -58,7 +61,7 @@ export function ConfirmDialog({
           <div className="flex flex-col gap-4">{children}</div>
           <div className="flex flex-wrap justify-end gap-3 pt-2">
             <Button variant="secondary" onClick={onClose} disabled={busy}>
-              {t('cancel')}
+              {cancelLabel ?? t('cancel')}
             </Button>
             <Button variant={danger ? 'danger' : 'primary'} onClick={onConfirm} loading={busy} disabled={confirmDisabled} data-testid="dialog-confirm">
               {confirmLabel}

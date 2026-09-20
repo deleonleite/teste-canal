@@ -240,3 +240,11 @@ export interface RelatedSuggestion {
   sharedPeople: number;
   sameLocation: boolean;
 }
+
+export interface ActivationStatus {
+  tenantStatus: 'TRIAL' | 'ACTIVE' | 'SUSPENDED' | 'CANCELLED';
+  ready: boolean;
+  missing: string[];
+  escalationRecipientEmail: string | null;
+  dpo: { name: string; email: string } | null;
+}
