@@ -11,6 +11,7 @@ import { staffApi, type LoginResult } from '@/lib/staff-client';
 
 type Step =
   | { kind: 'credentials' }
+  | { kind: 'change'; token: string }
   | { kind: 'mfa'; mfaToken: string; recovery: boolean }
   | { kind: 'enroll'; enrollToken: string }
   | { kind: 'recovery'; codes: string[] };
@@ -31,7 +32,7 @@ export function LoginForm({ tenant, expired }: { tenant: string; expired: boolea
   const [step, setStep] = useState<Step>({ kind: 'credentials' });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [errors, setErrors] = useState<{ email?: string; password?: string; code?: string }>({});
+  const [errors, setErrors] = useState<{ email?: string; password?: string; code?: string; newPassword?: string }>({});
   const heading = useRef<HTMLHeadingElement>(null);
 
   // Ao trocar de etapa o foco vai ao título (leitor de tela anuncia a etapa nova).
@@ -59,11 +60,32 @@ export function LoginForm({ tenant, expired }: { tenant: string; expired: boolea
     setBusy(true);
     try {
       const r = await api.post<LoginResult>('auth/login', { email, password });
-      if ('mfaRequired' in r) setStep({ kind: 'mfa', mfaToken: r.mfaToken, recovery: false });
+      if ('passwordChangeRequired' in r) setStep({ kind: 'change', token: r.token });
+      else if ('mfaRequired' in r) setStep({ kind: 'mfa', mfaToken: r.mfaToken, recovery: false });
       else if ('mfaEnrollmentRequired' in r) setStep({ kind: 'enroll', enrollToken: r.enrollToken });
       else done();
     } catch (e) {
       failed(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onChange(ev: FormEvent<HTMLFormElement>) {
+    ev.preventDefault();
+    if (step.kind !== 'change') return;
+    const newPassword = String(new FormData(ev.currentTarget).get('newPassword') ?? '');
+    setError(null);
+    if (!newPassword) return setErrors({ newPassword: t('required') });
+    setErrors({});
+    setBusy(true);
+    try {
+      const r = await api.post<LoginResult>('auth/change-password', { token: step.token, newPassword });
+      if ('mfaRequired' in r) setStep({ kind: 'mfa', mfaToken: r.mfaToken, recovery: false });
+      else if ('mfaEnrollmentRequired' in r) setStep({ kind: 'enroll', enrollToken: r.enrollToken });
+      else done();
+    } catch (e) {
+      setError(e instanceof ApiError && e.status === 401 ? t('invalid') : t('changeError'));
     } finally {
       setBusy(false);
     }
@@ -108,6 +130,26 @@ export function LoginForm({ tenant, expired }: { tenant: string; expired: boolea
             {error && <Alert tone="danger">{error}</Alert>}
             <Button type="submit" size="lg" loading={busy} data-testid="login-submit">
               {t('submit')}
+            </Button>
+          </form>
+        </>
+      )}
+
+      {step.kind === 'change' && (
+        <>
+          <div className="flex flex-col gap-2">
+            <h1 ref={heading} tabIndex={-1} className="text-h1 outline-none">
+              {t('changeTitle')}
+            </h1>
+            <p className="text-fg-2">{t('changeIntro')}</p>
+          </div>
+          <form onSubmit={onChange} noValidate className="flex flex-col gap-5">
+            <Field label={t('newPassword')} hint={t('newPasswordHint')} error={errors.newPassword}>
+              {(a) => <Input {...a} name="newPassword" type="password" autoComplete="new-password" data-testid="change-password" />}
+            </Field>
+            {error && <Alert tone="danger">{error}</Alert>}
+            <Button type="submit" size="lg" loading={busy} data-testid="change-submit">
+              {t('changeSubmit')}
             </Button>
           </form>
         </>
@@ -162,7 +204,7 @@ export function LoginForm({ tenant, expired }: { tenant: string; expired: boolea
   );
 }
 
-function Enroll({ tenant, token, heading, onCodes }: { tenant: string; token: string; heading: React.RefObject<HTMLHeadingElement | null>; onCodes: (c: string[]) => void }) {
+export function Enroll({ tenant, token, heading, onCodes }: { tenant: string; token: string; heading: React.RefObject<HTMLHeadingElement | null>; onCodes: (c: string[]) => void }) {
   const t = useTranslations('login');
   const api = staffApi(tenant);
   const [uri, setUri] = useState<string | null>(null);
@@ -233,7 +275,7 @@ function Enroll({ tenant, token, heading, onCodes }: { tenant: string; token: st
   );
 }
 
-function Recovery({ codes, heading, onContinue }: { codes: string[]; heading: React.RefObject<HTMLHeadingElement | null>; onContinue: () => void }) {
+export function Recovery({ codes, heading, onContinue }: { codes: string[]; heading: React.RefObject<HTMLHeadingElement | null>; onContinue: () => void }) {
   const t = useTranslations('login');
   const [saved, setSaved] = useState(false);
   return (

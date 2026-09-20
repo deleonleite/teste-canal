@@ -15,7 +15,8 @@ import { API_URL, brandingTag, serviceHeaders, TENANT_SLUG } from '@/lib/server-
  */
 
 const ALLOWED = [
-  /^auth\/(login|me|sessions|logout|logout-all|mfa\/(verify|enroll|activate|disable))(\/[0-9a-f-]{36})?$/,
+  /^auth\/(login|change-password|me|sessions|logout|logout-all|mfa\/(verify|enroll|activate|disable))(\/[0-9a-f-]{36})?$/,
+  /^onboarding\/(activation|activate|dpo|escalation-recipient)$/,
   /^complaints(\/[0-9a-f-]{36}(\/(status|assign|comments|addenda|sla\/(pause|resume)|related-suggestions|links|messages|attachments|recuse|restriction|reveal-identity)|\/attachments\/[0-9a-f-]{36}(\/(download|verify))?)?)?$/,
   /^users(\/manage)?$/,
   /^users\/[0-9a-f-]{36}\/(block|unblock|mfa\/reset)$/,
@@ -85,7 +86,7 @@ async function handle(req: NextRequest, ctx: { params: Promise<{ tenant: string;
   const body = mutating ? await req.arrayBuffer() : undefined;
   let at = jar.get(accessCookie(tenant))?.value;
   const rt = jar.get(refreshCookie(tenant))?.value;
-  const isLogin = joined === 'auth/login' || joined === 'auth/mfa/verify';
+  const isLogin = joined === 'auth/login' || joined === 'auth/mfa/verify' || joined === 'auth/change-password';
 
   // Sem access mas com refresh (cookie de access expirou): renova antes de chamar.
   let renewed: Tokens | null = null;
@@ -126,8 +127,8 @@ async function handle(req: NextRequest, ctx: { params: Promise<{ tenant: string;
       return json(rest, upstream.status);
     }
   }
-  // Marca/configurações públicas mudaram: descarta o cache do canal público.
-  if (upstream.ok && mutating && (joined === 'branding' || joined.startsWith('settings/'))) revalidateTag(brandingTag(tenant));
+  // Marca/configurações públicas mudaram (ou a empresa foi ativada/DPO informado): descarta o cache do canal público.
+  if (upstream.ok && mutating && (joined === 'branding' || joined.startsWith('settings/') || joined === 'onboarding/dpo' || joined === 'onboarding/activate')) revalidateTag(brandingTag(tenant));
   if (joined === 'auth/logout' || joined === 'auth/logout-all') await clearSession(jar, tenant);
 
   const out = new Headers(noStore);

@@ -70,7 +70,8 @@ export interface Me {
 export type LoginResult =
   | { authenticated: true }
   | { mfaRequired: true; mfaToken: string }
-  | { mfaEnrollmentRequired: true; enrollToken: string };
+  | { mfaEnrollmentRequired: true; enrollToken: string }
+  | { passwordChangeRequired: true; token: string };
 
 export interface SlaIndicator {
   state: string;

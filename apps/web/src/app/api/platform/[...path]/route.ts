@@ -13,7 +13,7 @@ import { clearPlatformSession, PLATFORM_ACCESS_COOKIE, PLATFORM_REFRESH_COOKIE, 
 const UUID = '[0-9a-f-]{36}';
 const ALLOWED = [
   /^auth\/(login|change-password|logout|me|mfa\/(verify|enroll|activate))$/,
-  new RegExp(`^tenants(\\/${UUID}(\\/(suspend|reactivate))?)?$`),
+  new RegExp(`^tenants(\\/${UUID}(\\/(suspend|reactivate|resend-invite))?)?$`),
   new RegExp(`^users(\\/${UUID}(\\/reset-password)?)?$`),
   /^audit$/,
 ];
