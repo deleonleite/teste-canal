@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
@@ -8,6 +9,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { passwordSchema, type UserRole } from '@ouvion/contracts';
 import * as argon2 from 'argon2';
 import { ClsService } from 'nestjs-cls';
 
@@ -34,9 +36,10 @@ export interface SessionTokens {
 export type LoginOutcome =
   | { kind: 'session'; tokens: SessionTokens }
   | { kind: 'mfa_required'; mfaToken: string }
-  | { kind: 'mfa_enrollment_required'; enrollToken: string };
+  | { kind: 'mfa_enrollment_required'; enrollToken: string }
+  | { kind: 'password_change_required'; token: string };
 
-type Scope = 'mfa' | 'mfa-enroll';
+type Scope = 'mfa' | 'mfa-enroll' | 'pwd';
 
 @Injectable()
 export class AuthService implements OnModuleInit {
@@ -138,11 +141,31 @@ export class AuthService implements OnModuleInit {
     // Mensagem genérica: o motivo da suspensão nunca é revelado ao suspenso.
     if (user.isBlocked) throw new ForbiddenException('Acesso suspenso. Contate o RH/administrador');
 
+    // Senha temporária (emitida pela plataforma): a troca vem ANTES de qualquer sessão ou 2º fator.
+    if (user.mustChangePassword) return { kind: 'password_change_required', token: await this.signScoped(user.id, 'pwd', '10m') };
+    return this.afterPassword(user, client);
+  }
+
+  /** Depois da senha: 2º fator (ou cadastro dele) e, só então, a sessão. */
+  private async afterPassword(user: { id: string; role: UserRole; mfaEnabled: boolean }, client: ClientInfo): Promise<LoginOutcome> {
     if (user.mfaEnabled) return { kind: 'mfa_required', mfaToken: await this.signScoped(user.id, 'mfa', '5m') };
     if (this.config.requiresMfa(user.role)) {
       return { kind: 'mfa_enrollment_required', enrollToken: await this.signScoped(user.id, 'mfa-enroll', '15m') };
     }
     return { kind: 'session', tokens: await this.startSession(user.id, client) };
+  }
+
+  /** Troca da senha temporária: valida a política, exige senha diferente e segue para o 2º fator. */
+  async changeTemporaryPassword(token: string, newPassword: string, client: ClientInfo): Promise<LoginOutcome> {
+    const userId = await this.verifyScoped(token, 'pwd');
+    const parsed = passwordSchema.safeParse(newPassword);
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues[0]?.message ?? 'Senha fraca');
+    const user = await this.prisma.withTenant(this.tenantId(), (tx) => tx.user.findUnique({ where: { id: userId } }));
+    if (!user || !user.isActive || user.isBlocked || !user.mustChangePassword) throw new UnauthorizedException();
+    if (await argon2.verify(user.passwordHash, newPassword).catch(() => false)) throw new BadRequestException('Escolha uma senha diferente da temporária');
+    const passwordHash = await argon2.hash(newPassword, { type: argon2.argon2id });
+    await this.prisma.withTenant(this.tenantId(), (tx) => tx.user.update({ where: { id: userId }, data: { passwordHash, mustChangePassword: false } }));
+    return this.afterPassword(user, client);
   }
 
   /** 2ª etapa do login: TOTP ou código de recuperação. Falhas contam para o mesmo bloqueio. */

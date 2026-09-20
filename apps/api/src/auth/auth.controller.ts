@@ -11,7 +11,7 @@ import { clientInfo } from '../common/client-info';
 import { parseBody } from '../common/zod';
 import { PrismaService } from '../prisma/prisma.service';
 import type { TenantClsStore } from '../tenancy/tenant-context';
-import { AuthService, type SessionTokens } from './auth.service';
+import { AuthService, type LoginOutcome, type SessionTokens } from './auth.service';
 import {
   clearSessionCookies,
   enforceCsrf,
@@ -27,6 +27,7 @@ import { SessionService } from './session.service';
 const loginSchema = z
   .object({ email: z.string().email(), password: z.string().min(1).max(100) })
   .strict();
+const changePasswordSchema = z.object({ token: z.string().min(10), newPassword: z.string().min(1).max(100) }).strict();
 const otp = z.string().regex(/^\d{6}$/, 'Código inválido');
 const mfaVerifySchema = z
   .object({ mfaToken: z.string().min(10), code: otp.optional(), recoveryCode: z.string().max(20).optional() })
@@ -64,9 +65,22 @@ export class AuthController {
   async login(@Req() req: Request, @Res({ passthrough: true }) res: Response, @Body() body: unknown) {
     const { email, password } = parseBody(loginSchema, body);
     const out = await this.auth.login(email, password, clientInfo(req));
+    return this.outcome(req, res, out);
+  }
+
+  private outcome(req: Request, res: Response, out: LoginOutcome) {
+    if (out.kind === 'password_change_required') return { passwordChangeRequired: true, token: out.token };
     if (out.kind === 'mfa_required') return { mfaRequired: true, mfaToken: out.mfaToken };
     if (out.kind === 'mfa_enrollment_required') return { mfaEnrollmentRequired: true, enrollToken: out.enrollToken };
     return this.deliver(req, res, out.tokens);
+  }
+
+  /** Troca da senha temporária (emitida pela plataforma): vem antes de qualquer sessão e do 2º fator. */
+  @Post('change-password')
+  @HttpCode(200)
+  async changePassword(@Req() req: Request, @Res({ passthrough: true }) res: Response, @Body() body: unknown) {
+    const { token, newPassword } = parseBody(changePasswordSchema, body);
+    return this.outcome(req, res, await this.auth.changeTemporaryPassword(token, newPassword, clientInfo(req)));
   }
 
   @Post('mfa/verify')

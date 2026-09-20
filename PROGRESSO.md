@@ -372,6 +372,34 @@ Como rodar: `docker compose -f infra/docker/docker-compose.yml up -d postgres` �
 - [ ] Registro/login de REPORTER e denúncia identificada; recuperação de senha (não existe no backend)
 - [ ] i18n EN/ES, PWA (manifest por tenant, service worker network-only), `customCss` sanitizado, `apps/admin-web`/SUPER_ADMIN, CSP com nonce, Lighthouse/CWV no CI, domínio próprio por tenant
 
+## Painel SUPER_ADMIN (tarefas.md) — Etapa A: fundação real — *concluída; API 174 testes, e2e 47 (11 novos da plataforma)*
+
+### Backend (`apps/api/src/platform`, migration `platform_admin`)
+- [x] Espaço **separado** dos usuários de tenant: tabelas `platform_users`, `platform_refresh_tokens`, `platform_audit_logs`; JWT com segredo e audiência próprios (token de empresa não vale aqui e vice-versa, testado nos dois sentidos)
+- [x] Papel de banco `platform_admin` com GRANT só nessas tabelas + `tenants`/branding. **Sem acesso a complaints, users de tenant, mensagens, anexos nem auditoria de tenant** — testado com SQL direto (`permission denied`)
+- [x] Contagens por empresa por função `SECURITY DEFINER` (`platform_tenant_stats`) que devolve **só números**
+- [x] Login `/platform/auth`: mensagem única "Acesso restrito à equipe OuviON" (e-mail inexistente = senha errada), bloqueio após 5 falhas, **2º fator SEMPRE obrigatório** (sem opção que desligue), cadastro no primeiro acesso, código TOTP não reutilizável, recuperação de uso único, segredo do TOTP cifrado pela chave-mestra, refresh rotativo com detecção de reuso
+- [x] Perfis SUPER_ADMIN / SUPPORT / FINANCIAL com permissões do §2 (SUPPORT lista empresas mas não suspende nem gere usuários; FINANCIAL não lista empresas)
+- [x] Empresas: listar/filtrar/ver e **suspender/reativar (suspensão comercial)** com motivo ≥ 10, auditoria de gravidade alta; equipe da empresa perde o login e o **canal público continua recebendo denúncias** (testado)
+- [x] Usuários internos: criar com senha **temporária** (troca obrigatória + 2º fator no primeiro acesso, antes de qualquer sessão), mudar perfil, desativar (derruba sessões), reset de senha; protege o último SUPER_ADMIN e o próprio operador; senha nunca vai para a auditoria
+- [x] Auditoria da plataforma (`PlatformAuditAction`, gravidade LOW–CRITICAL), **somente de acréscimo por trigger** (nem o dono do schema altera/apaga)
+
+### Frontend (`/loginadm` e `/admin/*` no mesmo app Next)
+- [x] BFF próprio `/api/platform` com **cookies próprios** (`ouvion_pat`/`ouvion_prt`, httpOnly, SameSite=Strict), CSRF, lista fixa de rotas (nenhuma de conteúdo de denúncia), renovação de sessão
+- [x] Login: senha → troca da temporária → 2º fator → cadastro com QR gerado no navegador → códigos de recuperação; foco no título a cada etapa
+- [x] Layout com os 6 itens da sidebar filtrados por perfil (FINANCIAL não vê Empresas), cards planos com borda superior de 2px, token novo `--plan-enterprise: #8a6d1f` (≥ 4,5:1, com teste)
+- [x] Empresas (lista com busca/filtro/contagens + detalhe com garantia de privacidade e suspensão), Usuários internos (banner de alerta, permissões por perfil), Auditoria (gravidade, filtro, detalhes técnicos, destaque de quebra de vidro), Configurações (política de MFA **informativa, sem toggle**)
+- [x] **Dashboard e Assinaturas com dados de demonstração rotulados** ("Dados de demonstração") — nada mock aparece como métrica real; empresas recentes e contagens do dashboard são reais
+- [x] e2e: login real com TOTP, primeiro acesso real de usuário novo, perfis (SUPPORT/FINANCIAL), suspensão ponta a ponta, CSRF, axe AA em todas as telas
+
+### Ainda não feito (próximas etapas)
+- [ ] **Nova Empresa** com convite por link (72 h, uso único, ADMIN define senha + MFA + destinatário alternativo + DPO antes de sair de TRIAL), opção de senha temporária auditada, reenvio de convite (§4.2.1)
+- [ ] **Quebra de vidro** completa (§5): solicitação, 2º SUPER_ADMIN aprovando com MFA recente, janela de 1 h escopada ao recurso, aviso ao ADMIN da empresa, auditoria dupla, revogação automática
+- [ ] Configurações globais: abas e valores reais (senha, tentativas, timeout, whitelist de IP, trial, limites por plano, SMTP, pagamento)
+- [ ] Assinaturas/planos/MRR reais e limites de plano (fase 8 do roadmap); gráficos do dashboard; passkey como alternativa ao TOTP; whitelist de IP para SUPER_ADMIN
+- [ ] Tela de troca da própria senha do operador; `PLATFORM_DATABASE_URL`/`PLATFORM_JWT_SECRET` em produção (o código exige)
+- [ ] Observação de dev: o banco `ouvion` local tem 3 selos de auditoria da empresa demo ancorados em memória por um worker de teste antigo; a verificação os acusa (o e2e tolera só esse caso). Some ao recriar o banco de dev
+
 ## Fase 5B — Investigação, dossiê e relatórios (a fazer)
 - [ ] Plano de investigação, tarefas/checklist (`mandatory`, atraso, exigência para encerrar), modelos por tipo
 - [ ] Entrevistas (consentimento de gravação, retenção, acesso restrito por URL curta)

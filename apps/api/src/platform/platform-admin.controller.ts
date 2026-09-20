@@ -1,11 +1,15 @@
+import { randomBytes } from 'node:crypto';
+
 import { BadRequestException, Body, ConflictException, Controller, Get, HttpCode, NotFoundException, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
-import { passwordSchema } from '@ouvion/contracts';
+import { passwordSchema, tenantSlugSchema } from '@ouvion/contracts';
 import { PlatformAuditAction, PlatformRole, Severity } from '@prisma/client';
 import * as argon2 from 'argon2';
 import { z } from 'zod';
 
 import { clientInfo } from '../common/client-info';
 import { parseBody } from '../common/zod';
+import { sha256 } from '../external/external-access.service';
+import { Mailer, OutboxMailer } from '../mail/mailer';
 import { PlatformAuditService } from './platform-audit.service';
 import { PlatformAuthService } from './platform-auth.service';
 import { PlatformPrismaService } from './platform-prisma.service';
@@ -30,6 +34,30 @@ const auditQuery = z.object({
   severity: z.nativeEnum(Severity).optional(),
 });
 
+const INVITE_VALIDITY_MS = 72 * 3600_000;
+const createTenantSchema = z
+  .object({
+    companyName: z.string().trim().min(2).max(120),
+    slug: tenantSlugSchema,
+    adminEmail: z.string().email().max(200),
+    adminFullName: z.string().trim().min(2).max(120),
+    /** 'invite' (padrão, recomendado): link de uso único; 'temp_password' é exceção auditada. */
+    mode: z.enum(['invite', 'temp_password']).default('invite'),
+    /** Só em temp_password. Vazio = o sistema gera uma senha forte e a mostra UMA vez. */
+    password: z.string().min(1).max(100).optional(),
+    /** Obrigatório em temp_password: por que a exceção. */
+    reason: z.string().trim().min(10).max(500).optional(),
+  })
+  .strict()
+  .refine((v) => v.mode !== 'temp_password' || !!v.reason, { message: 'Informe o motivo da exceção', path: ['reason'] });
+
+/** Senha forte gerada pelo sistema (atende à política única). */
+function generatePassword(): string {
+  const pick = (chars: string, n: number) => Array.from(randomBytes(n), (b) => chars[b % chars.length]).join('');
+  const raw = pick('abcdefghijkmnpqrstuvwxyz', 6) + pick('ABCDEFGHJKMNPQRSTUVWXYZ', 4) + pick('23456789', 3) + pick('!@#$%&*?', 2);
+  return Array.from(raw).sort(() => randomBytes(1)[0]! - 128).join('');
+}
+
 interface StatRow {
   tenant_id: string;
   user_count: number;
@@ -45,6 +73,7 @@ export class PlatformAdminController {
     private readonly prisma: PlatformPrismaService,
     private readonly audit: PlatformAuditService,
     private readonly auth: PlatformAuthService,
+    private readonly mailer: Mailer,
   ) {}
 
   // ── Empresas ───────────────────────────────────────────────────────────────────────────────
@@ -71,7 +100,15 @@ export class PlatformAdminController {
       this.prisma.db.$queryRaw<StatRow[]>`SELECT * FROM platform_tenant_stats()`,
     ]);
     const byId = new Map(stats.map((s) => [s.tenant_id, s]));
+    const invites = await this.prisma.db.tenantInvite.findMany({
+      where: { tenantId: { in: tenants.map((t) => t.id) } },
+      orderBy: { createdAt: 'desc' },
+      select: { tenantId: true, email: true, expiresAt: true, usedAt: true, revokedAt: true },
+    });
+    const lastInvite = new Map<string, (typeof invites)[number]>();
+    for (const i of invites) if (!lastInvite.has(i.tenantId)) lastInvite.set(i.tenantId, i);
     return tenants.map((t) => {
+      const inv = lastInvite.get(t.id);
       const s = byId.get(t.id);
       return {
         id: t.id,
@@ -84,6 +121,7 @@ export class PlatformAdminController {
         createdAt: t.createdAt,
         dpo: t.dpoName || t.dpoEmail ? { name: t.dpoName, email: t.dpoEmail } : null,
         onboarding: { escalationVerified: t.escalationVerifiedAt !== null, escalationTotpEnrolled: t.escalationTotpEnrolledAt !== null },
+        invite: inv ? { email: inv.email, state: inv.usedAt ? 'accepted' : inv.revokedAt ? 'revoked' : inv.expiresAt <= new Date() ? 'expired' : 'pending', expiresAt: inv.expiresAt } : null,
         // Só números: nunca conteúdo.
         counts: { users: s?.user_count ?? 0, complaints: s?.complaint_count ?? 0, complaintsThisMonth: s?.complaints_this_month ?? 0 },
       };
@@ -105,6 +143,79 @@ export class PlatformAdminController {
     const [row] = await this.tenantRows({ id: parseBody(uuid, id) });
     if (!row) throw new NotFoundException('Empresa não encontrada');
     return row;
+  }
+
+  private async sendInvite(tenantId: string, slug: string, companyName: string, email: string, operatorId: string, client: { ip?: string; userAgent?: string }) {
+    // Reenvio: os convites anteriores deixam de valer (o token antigo nunca é reaproveitado).
+    await this.prisma.db.tenantInvite.updateMany({ where: { tenantId, usedAt: null, revokedAt: null }, data: { revokedAt: new Date() } });
+    const token = randomBytes(32).toString('base64url');
+    const expiresAt = new Date(Date.now() + INVITE_VALIDITY_MS);
+    await this.prisma.db.tenantInvite.create({ data: { tenantId, email: email.toLowerCase(), tokenHash: sha256(token), expiresAt, createdBy: operatorId } });
+    const base = process.env.PUBLIC_WEB_URL ?? 'https://app.ouvion.local';
+    const link = `${base}/${slug}/convite?token=${token}`;
+    await this.mailer.send({
+      to: email.toLowerCase(),
+      subject: `Convite para administrar o canal de denúncias de ${companyName} — OuviON`,
+      text: `Você foi convidado(a) para administrar o canal de denúncias de ${companyName}. Defina sua senha e ative o segundo fator neste link (uso único, vale por 72 horas): ${link}`,
+    });
+    await this.audit.record({ action: 'TENANT_INVITE_SENT', severity: 'MEDIUM', resource: 'tenant', resourceId: tenantId, tenantId, actorId: operatorId, details: { to: email.toLowerCase(), expiresAt: expiresAt.toISOString() }, ...client });
+    // Só dev/teste (e-mail em memória): devolve o link a quem está testando. Em produção nunca sai daqui.
+    const dev = this.mailer instanceof OutboxMailer && process.env.NODE_ENV !== 'production';
+    return { sentTo: email.toLowerCase(), expiresAt, ...(dev ? { devInviteUrl: link } : {}) };
+  }
+
+  /**
+   * Nova empresa. Padrão: CONVITE por link — a plataforma nunca chega a conhecer a senha do ADMIN. Exceção
+   * auditada: senha temporária (exibida uma única vez, troca obrigatória no primeiro acesso).
+   */
+  @Post('tenants')
+  @PlatformRoles('SUPER_ADMIN')
+  async createTenant(@Req() req: PlatformRequest, @Body() body: unknown) {
+    const b = parseBody(createTenantSchema, body);
+    const client = clientInfo(req);
+    const temp = b.mode === 'temp_password';
+    let plain: string | undefined;
+    if (temp) {
+      plain = b.password ?? generatePassword();
+      this.checkPassword(plain);
+    }
+    // Convite: hash de uma senha aleatória que ninguém conhece (a pessoa define a dela pelo link).
+    const passwordHash = await argon2.hash(plain ?? randomBytes(32).toString('hex'), { type: argon2.argon2id });
+    let created: { tenant_id: string; admin_id: string };
+    try {
+      const rows = await this.prisma.db.$queryRaw<Array<{ tenant_id: string; admin_id: string }>>`
+        SELECT * FROM platform_provision_tenant(${b.slug}, ${b.companyName}, ${b.adminEmail}, ${b.adminFullName}, ${passwordHash}, ${temp})`;
+      created = rows[0]!;
+    } catch (e) {
+      if (/duplicate key|23505|unique/i.test(String((e as Error).message))) throw new ConflictException('Este identificador de empresa já está em uso');
+      throw e;
+    }
+    await this.audit.record({ action: 'TENANT_CREATED', severity: 'MEDIUM', resource: 'tenant', resourceId: created.tenant_id, tenantId: created.tenant_id, actorId: req.operator.userId, details: { slug: b.slug, mode: b.mode }, ...client });
+
+    if (temp) {
+      await this.audit.record({
+        action: 'TENANT_ADMIN_TEMP_PASSWORD_ISSUED', severity: 'HIGH', resource: 'tenant', resourceId: created.tenant_id, tenantId: created.tenant_id,
+        actorId: req.operator.userId, details: { reason: b.reason!, generated: !b.password }, ...client,
+      });
+      // A senha digitada pelo operador não volta; a GERADA é mostrada uma única vez e não fica em lugar nenhum legível.
+      return { tenantId: created.tenant_id, slug: b.slug, mode: 'temp_password' as const, ...(b.password ? {} : { temporaryPassword: plain }) };
+    }
+    const invite = await this.sendInvite(created.tenant_id, b.slug, b.companyName, b.adminEmail, req.operator.userId, client);
+    return { tenantId: created.tenant_id, slug: b.slug, mode: 'invite' as const, ...invite };
+  }
+
+  /** Convite vencido/perdido: novo token para o mesmo e-mail, invalidando o anterior. Só enquanto em teste e não aceito. */
+  @Post('tenants/:id/resend-invite')
+  @HttpCode(200)
+  @PlatformRoles('SUPER_ADMIN')
+  async resendInvite(@Req() req: PlatformRequest, @Param('id') id: string) {
+    const tenantId = parseBody(uuid, id);
+    const t = await this.prisma.db.tenant.findUnique({ where: { id: tenantId }, select: { slug: true, status: true, branding: { select: { companyName: true } } } });
+    if (!t) throw new NotFoundException('Empresa não encontrada');
+    const last = await this.prisma.db.tenantInvite.findFirst({ where: { tenantId }, orderBy: { createdAt: 'desc' } });
+    if (!last) throw new ConflictException('Esta empresa não foi criada por convite');
+    if (last.usedAt) throw new ConflictException('O convite já foi aceito');
+    return this.sendInvite(tenantId, t.slug, t.branding?.companyName ?? t.slug, last.email, req.operator.userId, clientInfo(req));
   }
 
   /** Suspensão COMERCIAL (TenantStatus): o canal público continua recebendo denúncias; a equipe da empresa perde o login. */

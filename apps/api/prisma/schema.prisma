@@ -194,6 +194,7 @@ model Tenant {
   auditSeals            AuditSeal[]
   keys                  TenantKey[]
   notifications         Notification[]
+  invites               TenantInvite[]
   userPreferences       UserPreferences[]
   slaAlerts             SlaAlert[]
 
@@ -235,6 +236,8 @@ model User {
   failedLoginCount Int       @default(0) @map("failed_login_count")
   lockedUntil      DateTime? @map("locked_until")
   deactivatedAt    DateTime? @map("deactivated_at")
+  /// Senha temporária (emitida pela plataforma): a troca é obrigatória antes de qualquer sessão
+  mustChangePassword Boolean  @default(false) @map("must_change_password")
   mfaEnabled       Boolean   @default(false) @map("mfa_enabled")
   /// Segredo TOTP cifrado (AES-GCM, chave por tenant)
   mfaSecretEnc     String?   @map("mfa_secret_enc")
@@ -799,4 +802,25 @@ model PlatformAuditLog {
   @@index([timestamp])
   @@index([actorId])
   @@map("platform_audit_logs")
+}
+
+/// Convite do primeiro ADMIN da empresa (link de uso único, 72 h). Só o hash do token é guardado; a plataforma
+/// nunca conhece a senha que a pessoa escolhe.
+model TenantInvite {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId  String    @map("tenant_id") @db.Uuid
+  email     String
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  /// Reenvio invalida os convites anteriores (o token antigo nunca é reaproveitado)
+  revokedAt DateTime? @map("revoked_at")
+  /// Operador da plataforma que enviou (sem FK: mora em outro espaço)
+  createdBy String?   @map("created_by") @db.Uuid
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, createdAt])
+  @@map("tenant_invites")
 }

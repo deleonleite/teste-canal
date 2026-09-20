@@ -1,14 +1,17 @@
 import { randomBytes } from 'node:crypto';
 
-import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { passwordSchema } from '@ouvion/contracts';
+import * as argon2 from 'argon2';
 import { authenticator } from 'otplib';
 import { ClsService } from 'nestjs-cls';
 
 import { AuditService } from '../audit/audit.service';
+import { RateLimiter, tooMany } from '../common/rate-limiter';
 import { FieldCipher } from '../crypto/field-cipher';
 import { SecurityConfig } from '../auth/security-config';
 import { sha256 } from '../external/external-access.service';
-import { Mailer } from '../mail/mailer';
+import { Mailer, OutboxMailer } from '../mail/mailer';
 import { PrismaService } from '../prisma/prisma.service';
 import type { TenantClsStore } from '../tenancy/tenant-context';
 
@@ -35,6 +38,7 @@ export class OnboardingService {
     private readonly cipher: FieldCipher,
     private readonly mailer: Mailer,
     private readonly config: SecurityConfig,
+    private readonly limiter: RateLimiter,
     private readonly cls: ClsService<TenantClsStore>,
   ) {}
 
@@ -68,12 +72,14 @@ export class OnboardingService {
       return t.slug;
     });
     const base = process.env.PUBLIC_WEB_URL ?? 'https://app.ouvion.local';
+    const link = `${base}/${slug}/destinatario?token=${token}`;
     await this.mailer.send({
       to: email.toLowerCase(),
       subject: 'Confirme seu papel de destinatário alternativo — OuviON',
-      text: `Confirme e configure seu segundo fator: ${base}/onboarding/escalation?tenant=${slug}&token=${token}`,
+      text: `Confirme e configure seu segundo fator: ${link}`,
     });
-    return { configured: true, verified: false };
+    // Só dev/teste (e-mail em memória): devolve o link para quem está testando. Em produção nunca sai daqui.
+    return { configured: true, verified: false, ...(this.mailer instanceof OutboxMailer && process.env.NODE_ENV !== 'production' ? { devConfirmUrl: link } : {}) };
   }
 
   private async byToken<T>(token: string, fn: (tx: Parameters<Parameters<PrismaService['withTenant']>[1]>[0], t: { id: string; escalationRecipientEmail: string | null; escalationTotpSecretEnc: string | null }) => Promise<T>): Promise<T> {
@@ -133,12 +139,75 @@ export class OnboardingService {
       const admins = await this.prisma.run((tx) => tx.user.count({ where: { role: 'ADMIN', isActive: true, mfaEnabled: true } }));
       if (admins === 0) missing.push('admin.mfa');
     }
-    // Fase futura: DPO informado (fase 8).
+    // O DPO é exigido na ativação (ver `activation`), não aqui: este método é o requisito do destinatário/MFA.
     return missing;
   }
 
   async status() {
     const missing = await this.missingActivationRequirements();
     return { ready: missing.length === 0, missing };
+  }
+
+  // ── Convite do primeiro ADMIN (enviado pela plataforma) ────────────────────────────────────────
+  /**
+   * A pessoa abre o link e define a PRÓPRIA senha: a plataforma nunca a conhece. Uso único, 72 h; um reenvio
+   * invalida os anteriores. Qualquer falha devolve a mesma mensagem (não revela se o link existiu, venceu ou já foi usado).
+   */
+  async acceptInvite(token: string, password: string, ip?: string) {
+    if (this.limiter.hit(`invite:${ip ?? 'x'}`, 60_000) > 10) throw tooMany();
+    const parsed = passwordSchema.safeParse(password);
+    const tenantId = this.tenantId();
+    const invalid = new BadRequestException('Convite inválido ou vencido. Peça um novo convite à equipe OuviON.');
+    return this.prisma.withTenant(tenantId, async (tx) => {
+      const invite = await tx.tenantInvite.findFirst({ where: { tokenHash: sha256(token), usedAt: null, revokedAt: null, expiresAt: { gt: new Date() } } });
+      if (!invite) throw invalid;
+      // Só depois de o convite ser válido a política de senha responde (assim o link inválido não vira oráculo).
+      if (!parsed.success) throw new BadRequestException(parsed.error.issues[0]?.message ?? 'Senha fraca');
+      const admin = await tx.user.findFirst({ where: { email: invite.email, role: 'ADMIN' } });
+      if (!admin) throw invalid;
+      await tx.user.update({
+        where: { id: admin.id },
+        data: { passwordHash: await argon2.hash(password, { type: argon2.argon2id }), mustChangePassword: false, failedLoginCount: 0, lockedUntil: null },
+      });
+      await tx.tenantInvite.update({ where: { id: invite.id }, data: { usedAt: new Date() } });
+      await this.audit.record(tx, { action: 'UPDATE', resource: 'admin_invite', resourceId: invite.id, userId: admin.id, details: { accepted: true }, ip });
+      return { email: invite.email };
+    });
+  }
+
+  // ── Ativação: sai de TRIAL só com os requisitos cumpridos ───────────────────────────────────────
+  async setDpo(name: string, email: string, client: Client) {
+    const tenantId = this.tenantId();
+    await this.prisma.withTenant(tenantId, async (tx) => {
+      await tx.tenant.update({ where: { id: tenantId }, data: { dpoName: name.trim(), dpoEmail: email.toLowerCase() } });
+      await this.audit.record(tx, { action: 'UPDATE', resource: 'tenant', resourceId: tenantId, details: { changed: 'dpo' }, ...client });
+    });
+    return { dpoInformed: true };
+  }
+
+  /** Checklist completo de ativação (destinatário alternativo, MFA do ADMIN e DPO) + situação atual da empresa. */
+  async activation() {
+    const missing = await this.missingActivationRequirements();
+    const t = await this.prisma.run((tx) => tx.tenant.findUniqueOrThrow({ where: { id: this.tenantId() } }));
+    if (!t.dpoName || !t.dpoEmail) missing.push('dpo.informed');
+    return {
+      tenantStatus: t.status,
+      ready: missing.length === 0,
+      missing,
+      escalationRecipientEmail: t.escalationRecipientEmail,
+      dpo: t.dpoName && t.dpoEmail ? { name: t.dpoName, email: t.dpoEmail } : null,
+    };
+  }
+
+  async activate(client: Client) {
+    const a = await this.activation();
+    if (a.tenantStatus !== 'TRIAL') throw new ConflictException('A empresa não está em período de teste');
+    if (!a.ready) throw new BadRequestException({ message: 'Ainda há pendências para ativar a empresa', missing: a.missing });
+    const tenantId = this.tenantId();
+    await this.prisma.withTenant(tenantId, async (tx) => {
+      await tx.tenant.update({ where: { id: tenantId }, data: { status: 'ACTIVE' } });
+      await this.audit.record(tx, { action: 'UPDATE', resource: 'tenant', resourceId: tenantId, details: { activated: true }, ...client });
+    });
+    return { status: 'ACTIVE' as const };
   }
 }
