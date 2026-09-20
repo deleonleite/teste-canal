@@ -110,14 +110,14 @@ describe('aprovação', () => {
     await http().post(`/platform/break-glass/${selfReq.body.id}/approve`).set(as(s.approver.token)).send({ minutes: 30, code: s.approver.next() }).expect(403);
 
     await http().post(`/platform/break-glass/${id}/approve`).set(as(s.approver.token)).send({ minutes: 61, code: s.approver.next() }).expect(400); // > 1 h
-    await http().post(`/platform/break-glass/${id}/approve`).set(as(s.approver.token)).send({ minutes: 30, code: '000000' }).expect(401); // código errado
+    await http().post(`/platform/break-glass/${id}/approve`).set(as(s.approver.token)).send({ minutes: 30, code: '000000' }).expect(400); // código errado (400, não 401: a sessão continua válida)
     const code = s.approver.next();
     const ok = await http().post(`/platform/break-glass/${id}/approve`).set(as(s.approver.token)).send({ minutes: 30, code }).expect(200);
     const msLeft = new Date(ok.body.expiresAt).getTime() - Date.now();
     expect(msLeft).toBeGreaterThan(29 * 60_000);
     expect(msLeft).toBeLessThanOrEqual(30 * 60_000);
     // O mesmo código não vale outra vez (e o pedido já foi decidido).
-    await http().post(`/platform/break-glass/${id}/approve`).set(as(s.approver.token)).send({ minutes: 30, code }).expect(401);
+    await http().post(`/platform/break-glass/${id}/approve`).set(as(s.approver.token)).send({ minutes: 30, code }).expect(400);
     const dec = await owner.breakGlassRequest.findUniqueOrThrow({ where: { id } });
     expect(dec).toMatchObject({ status: 'APPROVED', approvedBy: s.approver.id });
   });

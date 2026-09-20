@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useLocale, useTranslations } from 'next-intl';
 import Link from 'next/link';
 
-import { platformApi, type TenantRow } from '@/lib/platform-client';
+import { platformApi, type BreakGlassRow, type TenantRow } from '@/lib/platform-client';
 import { usePlatformMe } from './platform-shell';
 import { MetricCard, MockNotice } from './shared';
 import { TenantStatusBadge } from './tenants-view';
@@ -19,6 +19,10 @@ export function PlatformDashboard() {
   const me = usePlatformMe();
   const canSeeTenants = me.role === 'SUPER_ADMIN' || me.role === 'SUPPORT';
   const q = useQuery({ queryKey: ['platform-tenants', ''], queryFn: () => platformApi.get<TenantRow[]>('tenants'), enabled: canSeeTenants });
+
+  const bg = useQuery({ queryKey: ['break-glass'], queryFn: () => platformApi.get<BreakGlassRow[]>('break-glass'), enabled: canSeeTenants });
+  const tb = useTranslations('platform.bg');
+  const pendingBg = (bg.data ?? []).filter((r) => r.state === 'PENDING').length;
 
   const users = q.data?.reduce((n, x) => n + x.counts.users, 0);
   const month = q.data?.reduce((n, x) => n + x.counts.complaintsThisMonth, 0);
@@ -42,6 +46,18 @@ export function PlatformDashboard() {
         {canSeeTenants && <MetricCard label={t('users')} value={fmt(users)} tone="neutral" hint={t('real')} />}
         {canSeeTenants && <MetricCard label={t('complaints')} value={fmt(month)} tone="neutral" hint={t('real')} />}
       </div>
+
+      {canSeeTenants && (
+        <Card className="flex flex-wrap items-center justify-between gap-3 border-t-2 border-t-warning p-4" data-testid="bg-card">
+          <span className="flex flex-col">
+            <span className="font-semibold">{tb('dashboardCard')}</span>
+            <span className="text-body-sm text-fg-2">{tb('dashboardPending', { count: pendingBg })}</span>
+          </span>
+          <Link href="/admin/quebra-de-vidro" className="font-medium">
+            {tb('dashboardLink')}
+          </Link>
+        </Card>
+      )}
 
       {canSeeTenants && (
         <Card className="flex flex-col gap-3 p-4 sm:p-6">

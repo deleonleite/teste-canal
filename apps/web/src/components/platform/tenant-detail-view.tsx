@@ -11,6 +11,7 @@ import { toast } from 'sonner';
 import { ApiError } from '@/lib/api-client';
 import { platformApi, type TenantRow } from '@/lib/platform-client';
 import { ConfirmDialog } from '@/components/staff/dialog';
+import { BreakGlassRequestDialog } from './break-glass-request-dialog';
 import { usePlatformMe } from './platform-shell';
 import { RoleGate } from './shared';
 import { TenantStatusBadge } from './tenants-view';
@@ -33,6 +34,7 @@ function Detail({ id }: { id: string }) {
   const [fieldError, setFieldError] = useState<string | undefined>();
   const [error, setError] = useState<string | null>(null);
   const [resendOpen, setResendOpen] = useState(false);
+  const [bgOpen, setBgOpen] = useState(false);
   const [resent, setResent] = useState<{ devInviteUrl?: string } | null>(null);
 
   const q = useQuery({ queryKey: ['platform-tenant', id], queryFn: () => platformApi.get<TenantRow>(`tenants/${id}`) });
@@ -146,12 +148,9 @@ function Detail({ id }: { id: string }) {
             {t('resend')}
           </Button>
         )}
-        <Button variant="secondary" disabled aria-describedby="rs-hint">
+        <Button variant="secondary" onClick={() => setBgOpen(true)} data-testid="bg-request">
           {t('requestSupport')}
         </Button>
-        <span id="rs-hint" className="text-body-sm text-fg-2">
-          {t('requestSupportHint')}
-        </span>
       </div>
 
       {resent?.devInviteUrl && (
@@ -162,6 +161,8 @@ function Detail({ id }: { id: string }) {
           </a>
         </Alert>
       )}
+
+      <BreakGlassRequestDialog tenantId={id} tenantName={x.companyName} open={bgOpen} onClose={() => setBgOpen(false)} />
 
       <ConfirmDialog open={resendOpen} title={t('resendTitle')} confirmLabel={t('resend')} busy={resend.isPending} onClose={() => setResendOpen(false)} onConfirm={() => resend.mutate()}>
         <p>{t('resendBody')}</p>

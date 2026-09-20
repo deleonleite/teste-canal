@@ -14,6 +14,10 @@ const DEV_PLATFORM_USERS: Array<{ email: string; fullName: string; role: 'SUPER_
   { email: 'e2e-ops@ouvion.com', fullName: 'E2E Operador', role: 'SUPER_ADMIN' },
   { email: 'e2e-login@ouvion.com', fullName: 'E2E Login', role: 'SUPER_ADMIN' },
   { email: 'e2e-logout@ouvion.com', fullName: 'E2E Logout', role: 'SUPER_ADMIN' },
+  // Aprovadores da quebra de vidro: cada aprovação gasta um passo do código, então um por aprovação.
+  { email: 'e2e-approver-a@ouvion.com', fullName: 'E2E Aprovador A', role: 'SUPER_ADMIN' },
+  { email: 'e2e-approver-b@ouvion.com', fullName: 'E2E Aprovador B', role: 'SUPER_ADMIN' },
+  { email: 'e2e-approver-c@ouvion.com', fullName: 'E2E Aprovador C', role: 'SUPER_ADMIN' },
 ];
 
 /** Operadores de demonstração da plataforma: MFA já ativo com o segredo fixo acima. Só dev/staging. */

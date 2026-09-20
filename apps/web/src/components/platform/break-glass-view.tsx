@@ -73,7 +73,7 @@ function List() {
       await refresh();
     },
     onError: (e) => {
-      if (e instanceof ApiError && e.status === 401) setError(t('codeInvalid'));
+      if (e instanceof ApiError && e.status === 400) setError(t('codeInvalid'));
       else if (e instanceof ApiError && e.status === 403) setError(t('ownRequest'));
       else if (e instanceof ApiError && e.status === 409) setError(t('alreadyDecided'));
       else setError(t('actionError'));

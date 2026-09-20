@@ -180,6 +180,7 @@ export interface AuditRow {
   resourceId: string | null;
   timestamp: string;
   anonymousOrigin: boolean;
+  details?: Record<string, unknown> | null;
 }
 
 export interface AuditPage {

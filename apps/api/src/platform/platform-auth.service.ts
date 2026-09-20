@@ -173,11 +173,15 @@ export class PlatformAuthService {
    */
   async assertFreshMfa(userId: string, code: string): Promise<void> {
     const user = await this.prisma.db.platformUser.findUniqueOrThrow({ where: { id: userId } });
-    if (!user.mfaEnabled || !user.mfaSecretEnc) throw new UnauthorizedException('Código inválido');
+    if (!user.mfaEnabled || !user.mfaSecretEnc) throw new BadRequestException('Código inválido');
     const secret = this.kek.unwrap(user.mfaSecretEnc, `platform-mfa:${user.id}`).toString('utf8');
     const step = this.stepOf(code, secret, user.mfaLastStep);
     const ok = step !== null && (await this.prisma.db.platformUser.updateMany({ where: { id: user.id, mfaLastStep: { lt: step } }, data: { mfaLastStep: step } })).count === 1;
-    if (!ok) throw new UnauthorizedException('Código inválido ou já utilizado');
+    if (!ok) {
+      // 400 (e não 401): é um dado inválido, não uma sessão vencida — a tela não pode deslogar por causa disso.
+      await this.audit.record({ action: 'LOGIN_FAILED', severity: 'HIGH', resource: 'break_glass_step_up', actorId: userId, details: { why: 'mfa_step_up' } });
+      throw new BadRequestException('Código inválido ou já utilizado');
+    }
   }
 
   async enroll(enrollToken: string) {

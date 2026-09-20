@@ -35,4 +35,7 @@ export default async function globalSetup(): Promise<void> {
   await platformLogin(base, 'superadmin@ouvion.com', 'superadmin');
   await platformLogin(base, 'suporte@ouvion.com', 'suporte');
   await platformLogin(base, 'financeiro@ouvion.com', 'financeiro');
+  await platformLogin(base, 'e2e-approver-a@ouvion.com', 'approver-a');
+  await platformLogin(base, 'e2e-approver-b@ouvion.com', 'approver-b');
+  await platformLogin(base, 'e2e-approver-c@ouvion.com', 'approver-c');
 }

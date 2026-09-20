@@ -12,6 +12,24 @@ import { useMe } from './panel-shell';
 
 const LIMIT = 25;
 
+function BreakGlassLine({ d }: { d: Record<string, unknown> }) {
+  const t = useTranslations('audit');
+  const s = (k: string) => (typeof d[k] === 'string' ? (d[k] as string) : '—');
+  const phase = s('phase');
+  return (
+    <span className="mt-1 flex flex-col text-body-sm" data-testid="bg-audit-line">
+      <span className="font-medium text-fg">{t.has(`phase.${phase}` as 'phase.used') ? t(`phase.${phase}` as 'phase.used') : phase}</span>
+      <span className="text-fg-2">
+        {phase === 'approved'
+          ? t('breakGlassLine', { target: s('target'), requestedBy: s('requestedBy'), approvedBy: s('approvedBy'), reason: s('reason') })
+          : phase === 'used'
+            ? t('breakGlassUsed', { target: s('target'), usedBy: s('usedBy') })
+            : s('target')}
+      </span>
+    </span>
+  );
+}
+
 export function AuditView({ tenant }: { tenant: string }) {
   const t = useTranslations('audit');
   const ta = useTranslations('audit.actions');
@@ -104,6 +122,7 @@ export function AuditView({ tenant }: { tenant: string }) {
                   {ta(r.action as 'READ')} <span className="font-normal text-fg-2">· {r.resource}</span>
                 </span>
                 <span className="text-body-sm text-fg-2">{who(r.userId, r.anonymousOrigin)}</span>
+                {r.action === 'BREAK_GLASS_PLATFORM' && r.details && <BreakGlassLine d={r.details} />}
               </span>
               <span className="inline-flex items-center gap-1 text-body-sm text-fg-2">
                 {fmt(r.timestamp, r.anonymousOrigin)}
