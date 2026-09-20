@@ -699,3 +699,104 @@ model SlaAlert {
   @@unique([complaintId, kind, level])
   @@map("sla_alerts")
 }
+
+// ── Plataforma (painel SUPER_ADMIN): espaço separado dos usuários de tenant ────────────────────
+// Nada aqui tem tenant_id de RLS: o papel platform_admin só enxerga estas tabelas + tenants/branding,
+// e NUNCA conteúdo de denúncia (sem GRANT em complaints, anexos, mensagens etc.).
+
+enum PlatformRole {
+  SUPER_ADMIN
+  SUPPORT
+  FINANCIAL
+}
+
+enum PlatformAuditAction {
+  LOGIN
+  LOGIN_FAILED
+  LOGOUT
+  TENANT_CREATED
+  TENANT_SUSPENDED
+  TENANT_REACTIVATED
+  PLAN_CHANGED
+  SUBSCRIPTION_PAYMENT
+  INTERNAL_USER_CREATED
+  INTERNAL_USER_UPDATED
+  INTERNAL_USER_PASSWORD_RESET
+  SETTINGS_CHANGED
+  BREAK_GLASS_REQUESTED
+  BREAK_GLASS_APPROVED
+  BREAK_GLASS_USED
+  TENANT_ADMIN_TEMP_PASSWORD_ISSUED
+  TENANT_INVITE_SENT
+}
+
+enum Severity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+model PlatformUser {
+  id                 String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email              String       @unique
+  passwordHash       String       @map("password_hash")
+  fullName           String       @map("full_name")
+  role               PlatformRole
+  isActive           Boolean      @default(true) @map("is_active")
+  /// Senha temporária definida por outro operador: a troca é obrigatória antes de qualquer sessão
+  mustChangePassword Boolean      @default(false) @map("must_change_password")
+  mfaEnabled         Boolean      @default(false) @map("mfa_enabled")
+  /// Segredo TOTP embrulhado pela chave-mestra (KEK), com o id do usuário como AAD
+  mfaSecretEnc       String?      @map("mfa_secret_enc")
+  mfaRecoveryCodes   String[]     @default([]) @map("mfa_recovery_codes")
+  mfaLastStep        Int          @default(0) @map("mfa_last_step")
+  failedLoginCount   Int          @default(0) @map("failed_login_count")
+  lockedUntil        DateTime?    @map("locked_until")
+  lastLoginAt        DateTime?    @map("last_login_at")
+  createdAt          DateTime     @default(now()) @map("created_at")
+  updatedAt          DateTime     @updatedAt @map("updated_at")
+
+  refreshTokens PlatformRefreshToken[]
+
+  @@map("platform_users")
+}
+
+model PlatformRefreshToken {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId       String    @map("user_id") @db.Uuid
+  tokenHash    String    @unique @map("token_hash")
+  familyId     String    @map("family_id") @db.Uuid
+  expiresAt    DateTime  @map("expires_at")
+  revokedAt    DateTime? @map("revoked_at")
+  replacedById String?   @map("replaced_by_id") @db.Uuid
+  ipAddress    String?   @map("ip_address")
+  userAgent    String?   @map("user_agent")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  user PlatformUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt])
+  @@map("platform_refresh_tokens")
+}
+
+/// Trilha da PLATAFORMA (o que acontece no painel). Separada da auditoria de cada tenant, que vive nas tabelas
+/// do tenant. Append-only para a aplicação (sem UPDATE/DELETE).
+model PlatformAuditLog {
+  id         String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  actorId    String?             @map("actor_id") @db.Uuid
+  action     PlatformAuditAction
+  severity   Severity            @default(LOW)
+  resource   String
+  resourceId String?             @map("resource_id")
+  /// Tenant afetado, quando houver
+  tenantId   String?             @map("tenant_id") @db.Uuid
+  details    Json?
+  ipAddress  String?             @map("ip_address")
+  userAgent  String?             @map("user_agent")
+  timestamp  DateTime            @default(now())
+
+  @@index([timestamp])
+  @@index([actorId])
+  @@map("platform_audit_logs")
+}

@@ -39,3 +39,17 @@ export interface Me {
   role: 'ADMIN' | 'INVESTIGATOR' | 'AUDITOR' | 'REPORTER';
   mfaEnabled: boolean;
 }
+
+// ── Painel da plataforma (SUPER_ADMIN): espaço de cookies próprio, sem relação com o das empresas ──────────
+export const PLATFORM_ACCESS_COOKIE = 'ouvion_pat';
+export const PLATFORM_REFRESH_COOKIE = 'ouvion_prt';
+
+export async function savePlatformSession(jar: Jar, t: Tokens): Promise<void> {
+  jar.set(PLATFORM_ACCESS_COOKIE, t.accessToken, { ...base, maxAge: Math.max(30, t.expiresIn - 10) });
+  jar.set(PLATFORM_REFRESH_COOKIE, t.refreshToken, { ...base, maxAge: 60 * 60 * 24 * 7 });
+}
+
+export async function clearPlatformSession(jar: Jar): Promise<void> {
+  jar.delete(PLATFORM_ACCESS_COOKIE);
+  jar.delete(PLATFORM_REFRESH_COOKIE);
+}

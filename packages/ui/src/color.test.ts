@@ -97,3 +97,9 @@ describe('cor da marca do tenant', () => {
     expect(onColor('#ffffff')).toBe('#14181f');
   });
 });
+
+describe('token do plano ENTERPRISE', () => {
+  it('dourado escurecido com texto branco passa em 4,5:1 (mesmo valor nos dois temas)', () => {
+    expect(contrast(light['plan-enterprise']!, '#ffffff')).toBeGreaterThanOrEqual(4.5);
+  });
+});

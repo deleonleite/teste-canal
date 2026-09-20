@@ -20,6 +20,7 @@ module.exports = {
         success: v('status-success'),
         danger: v('status-danger'),
         warning: v('status-warning'),
+        'plan-enterprise': v('plan-enterprise'),
         info: v('status-info'),
         neutral: v('status-neutral'),
         critical: v('priority-critical'),

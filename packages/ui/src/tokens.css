@@ -19,6 +19,8 @@
   --status-warning: #8a5a06;
   --status-info: #2563a8;
   --status-neutral: #5b6474;
+  /* Exceção documentada (tarefas.md §3): dourado escurecido do plano ENTERPRISE, ≥ 4,5:1 com texto branco. */
+  --plan-enterprise: #8a6d1f;
   --priority-critical: #8b1e1e;
   --priority-high: #c2372b;
   --priority-medium: #8a5a06;

@@ -16,6 +16,12 @@ import { AttachmentSweepHandler, JobHandlers } from './worker/handlers';
 import { createAnchor, Anchor } from './audit/anchor';
 import { AuditController } from './audit/audit.controller';
 import { BrandingController, ManageBrandingController } from './branding/branding.controller';
+import { PlatformAdminController } from './platform/platform-admin.controller';
+import { PlatformAuditService } from './platform/platform-audit.service';
+import { PlatformAuthController } from './platform/platform-auth.controller';
+import { PlatformAuthService } from './platform/platform-auth.service';
+import { PlatformPrismaService } from './platform/platform-prisma.service';
+import { PlatformGuard } from './platform/platform.guard';
 import { AuditIntegrityService } from './audit/integrity.service';
 import { AuditService } from './audit/audit.service';
 import { AuthController } from './auth/auth.controller';
@@ -76,6 +82,8 @@ import { UsersController } from './users/users.controller';
     WorkflowController,
     BrandingController,
     ManageBrandingController,
+    PlatformAuthController,
+    PlatformAdminController,
   ],
   providers: [
     PrismaService,
@@ -113,6 +121,10 @@ import { UsersController } from './users/users.controller';
     NotificationsService,
     WorkflowService,
     SlaService,
+    PlatformPrismaService,
+    PlatformAuditService,
+    PlatformAuthService,
+    PlatformGuard,
     JwtAuthGuard,
     RolesGuard,
     TenantResolutionMiddleware,
@@ -120,7 +132,7 @@ import { UsersController } from './users/users.controller';
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {
-    // Tudo exige tenant resolvido, exceto o health check.
-    consumer.apply(TenantResolutionMiddleware).exclude('health').forRoutes('*');
+    // Tudo exige tenant resolvido, exceto o health check e o painel da plataforma (que não pertence a nenhum tenant).
+    consumer.apply(TenantResolutionMiddleware).exclude('health', 'platform/(.*)').forRoutes('*');
   }
 }

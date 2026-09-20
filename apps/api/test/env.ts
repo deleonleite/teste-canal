@@ -10,5 +10,6 @@ export const ADMIN_URL = `postgresql://postgres:postgres@${host}/postgres`;
 process.env.DATABASE_URL = RUNTIME_URL;
 process.env.DIRECT_DATABASE_URL = OWNER_URL;
 process.env.JWT_ACCESS_SECRET = 'test-secret-test-secret-test-secret-123';
+process.env.PLATFORM_DATABASE_URL = PLATFORM_URL;
 process.env.RATE_LIMIT_DISABLED = 'true';
 process.env.MFA_ENFORCEMENT = 'off';
