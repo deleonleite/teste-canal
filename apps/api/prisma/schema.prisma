@@ -1,0 +1,701 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_DATABASE_URL")
+}
+
+enum UserRole {
+  PUBLIC
+  REPORTER
+  INVESTIGATOR
+  ADMIN
+  AUDITOR
+  SUPER_ADMIN
+}
+
+enum TenantStatus {
+  ACTIVE
+  SUSPENDED
+  TRIAL
+  CANCELLED
+}
+
+enum ComplaintType {
+  HARASSMENT
+  DISCRIMINATION
+  FRAUD
+  CORRUPTION
+  SAFETY
+  ETHICS
+  OTHER
+}
+
+enum ComplaintPriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum ComplaintStatus {
+  PENDING
+  IN_PROGRESS
+  UNDER_REVIEW
+  RESOLVED
+  DISMISSED
+  ESCALATED
+}
+
+enum AuditAction {
+  CREATE
+  READ
+  UPDATE
+  DELETE
+  LOGIN
+  LOGOUT
+  EXPORT
+  DOWNLOAD
+  BLOCK
+  UNBLOCK
+  REVEAL_IDENTITY
+  RECUSE
+  REOPEN
+  ACCESS_GRANT
+  LOGIN_FAILED
+  MFA_ENROLL
+  LEGAL_HOLD
+  BREAK_GLASS_PLATFORM
+  EXTERNAL_ACCESS
+}
+
+enum ComplaintSource {
+  WEB
+  WHATSAPP
+  PHONE
+  AUDIO
+  EMAIL
+  INTERNAL
+}
+
+enum CommentVisibility {
+  INTERNAL
+  REPORTER
+}
+
+enum AddendumAuthor {
+  REPORTER
+  COMMITTEE
+}
+
+enum ConflictMatchType {
+  EMAIL
+  NAME
+}
+
+enum ConflictStatus {
+  PENDING
+  CONFIRMED
+  DISMISSED
+}
+
+enum RecusalOrigin {
+  SELF
+  AUTOMATIC
+  ADMIN
+}
+
+enum MessageDirection {
+  FROM_REPORTER
+  TO_REPORTER
+}
+
+enum ScanStatus {
+  PENDING
+  CLEAN
+  INFECTED
+  ERROR
+}
+
+enum ComplaintConclusion {
+  SUBSTANTIATED
+  PARTIALLY_SUBSTANTIATED
+  UNSUBSTANTIATED
+  INCONCLUSIVE
+}
+
+enum NotificationType {
+  COMPLAINT_CREATED
+  COMPLAINT_ASSIGNED
+  COMPLAINT_STATUS_CHANGED
+  COMPLAINT_COMMENT
+  ATTACHMENT_UPLOADED
+  DOSSIER_GENERATED
+  SYSTEM_ALERT
+  DEADLINE_REMINDER
+  REPORTER_MESSAGE
+  SLA_WARNING
+  SLA_BREACHED
+  CONFLICT_SUSPECTED
+  RECUSAL_REASSIGNED
+}
+
+enum SlaKind {
+  ACK
+  FEEDBACK
+}
+
+enum SlaLevel {
+  WARNING
+  BREACHED
+}
+
+model Tenant {
+  id                       String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  slug                     String       @unique
+  status                   TenantStatus @default(TRIAL)
+  isActive                 Boolean      @default(true) @map("is_active")
+  maxUsers                 Int          @default(10) @map("max_users")
+  maxComplaintsPerMonth    Int          @default(100) @map("max_complaints_per_month")
+  subscriptionExpiresAt    DateTime?    @map("subscription_expires_at")
+  /// LGPD: encarregado exibido no canal público
+  dpoName                  String?      @map("dpo_name")
+  dpoEmail                 String?      @map("dpo_email")
+  /// Destinatário alternativo (anti-paralisia, doc de negócio §5.2.9)
+  escalationRecipientEmail String?      @map("escalation_recipient_email")
+  /// Onboarding do destinatário alternativo: e-mail confirmado por link + TOTP enrolado
+  escalationVerifiedAt     DateTime?    @map("escalation_verified_at")
+  escalationTotpSecretEnc  String?      @map("escalation_totp_secret_enc")
+  escalationTotpEnrolledAt DateTime?    @map("escalation_totp_enrolled_at")
+  escalationTokenHash      String?      @map("escalation_token_hash")
+  escalationTokenExpiresAt DateTime?    @map("escalation_token_expires_at")
+  createdAt                DateTime     @default(now()) @map("created_at")
+  updatedAt                DateTime     @updatedAt @map("updated_at")
+
+  branding              TenantBranding?
+  users                 User[]
+  complaints            Complaint[]
+  auditLogs             AuditLog[]
+  addenda               ComplaintAddendum[]
+  statusHistory         ComplaintStatusHistory[]
+  comments              ComplaintComment[]
+  settings              SystemSetting[]
+  complaintRecusals     ComplaintRecusal[]
+  conflictFlags         ConflictFlag[]
+  complaintAccessGrants ComplaintAccessGrant[]
+  externalAccesses      ExternalAccess[]
+  identityReveals       IdentityReveal[]
+  messages              ComplaintMessage[]
+  attachments           Attachment[]
+  refreshTokens         RefreshToken[]
+  auditSeals            AuditSeal[]
+  keys                  TenantKey[]
+  notifications         Notification[]
+  userPreferences       UserPreferences[]
+  slaAlerts             SlaAlert[]
+
+  @@map("tenants")
+}
+
+model TenantBranding {
+  id                 String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId           String   @unique @map("tenant_id") @db.Uuid
+  companyName        String   @map("company_name")
+  primaryColor       String   @default("#3b82f6") @map("primary_color")
+  secondaryColor     String   @default("#f59e0b") @map("secondary_color")
+  logoUrl            String?  @map("logo_url")
+  faviconUrl         String?  @map("favicon_url")
+  loginBackgroundUrl String?  @map("login_background_url")
+  customCss          String?  @map("custom_css")
+  customDomain       String?  @unique @map("custom_domain")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("tenant_brandings")
+}
+
+model User {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// Nulo apenas para SUPER_ADMIN (operador da plataforma)
+  tenantId         String?   @map("tenant_id") @db.Uuid
+  email            String
+  passwordHash     String    @map("password_hash")
+  fullName         String    @map("full_name")
+  role             UserRole  @default(PUBLIC)
+  isActive         Boolean   @default(true) @map("is_active")
+  isBlocked        Boolean   @default(false) @map("is_blocked")
+  blockedReason    String?   @map("blocked_reason")
+  blockedAt        DateTime? @map("blocked_at")
+  blockedBy        String?   @map("blocked_by") @db.Uuid
+  lastLoginAt      DateTime? @map("last_login_at")
+  failedLoginCount Int       @default(0) @map("failed_login_count")
+  lockedUntil      DateTime? @map("locked_until")
+  deactivatedAt    DateTime? @map("deactivated_at")
+  mfaEnabled       Boolean   @default(false) @map("mfa_enabled")
+  /// Segredo TOTP cifrado (AES-GCM, chave por tenant)
+  mfaSecretEnc     String?   @map("mfa_secret_enc")
+  /// Hashes Argon2id dos códigos de recuperação (uso único)
+  mfaRecoveryCodes String[]  @default([]) @map("mfa_recovery_codes")
+  /// Último passo TOTP aceito: impede reutilizar o mesmo código
+  mfaLastStep      Int       @default(0) @map("mfa_last_step")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  tenant        Tenant?        @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  refreshTokens RefreshToken[]
+
+  @@unique([tenantId, email])
+  @@map("users")
+}
+
+model Complaint {
+  id                  String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId            String               @map("tenant_id") @db.Uuid
+  protocol            String               @unique
+  /// Hash Argon2id da chave de acesso do denunciante; a chave em claro nunca é guardada
+  accessKeyHash       String?              @map("access_key_hash")
+  isAnonymous         Boolean              @map("is_anonymous")
+  source              ComplaintSource      @default(WEB)
+  /// Classificação vigente do comitê (editável)
+  type                ComplaintType
+  /// Tipo conforme informado pelo denunciante (imutável)
+  reportedType        ComplaintType        @map("reported_type")
+  priority            ComplaintPriority    @default(MEDIUM)
+  status              ComplaintStatus      @default(PENDING)
+  // ── Relato original: IMUTÁVEL (trigger no banco) e coberto por integrityHash ──
+  title               String
+  description         String
+  involvedPeople      String[]             @map("involved_people")
+  witnesses           String[]
+  incidentDate        DateTime?            @map("incident_date") @db.Date
+  location            String?
+  integrityHash       String               @map("integrity_hash")
+  /// PII do denunciante identificado: cifrada em nível de campo (AES-256-GCM, chave por tenant)
+  reporterNameEnc     String?              @map("reporter_name_enc")
+  reporterEmailEnc    String?              @map("reporter_email_enc")
+  reporterPhoneEnc    String?              @map("reporter_phone_enc")
+  // ── Gestão do caso (editável) ──
+  department          String?
+  tags                String[]
+  /// Caso restrito (need-to-know)
+  isRestricted        Boolean              @default(false) @map("is_restricted")
+  investigatorId      String?              @map("investigator_id") @db.Uuid
+  // ── SLA (doc §5.11) ──
+  acknowledgedAt      DateTime?            @map("acknowledged_at")
+  ackDueAt            DateTime?            @map("ack_due_at")
+  ackWarnAt           DateTime?            @map("ack_warn_at")
+  feedbackDueAt       DateTime?            @map("feedback_due_at")
+  feedbackWarnAt      DateTime?            @map("feedback_warn_at")
+  feedbackSentAt      DateTime?            @map("feedback_sent_at")
+  slaPausedAt         DateTime?            @map("sla_paused_at")
+  slaPauseReason      String?              @map("sla_pause_reason")
+  // ── Encerramento estruturado (doc §5.12) ──
+  resolvedAt          DateTime?            @map("resolved_at")
+  conclusion          ComplaintConclusion?
+  correctiveActions   String?              @map("corrective_actions")
+  conclusionNotes     String?              @map("conclusion_notes")
+  retaliationReported Boolean              @default(false) @map("retaliation_reported")
+  followUpUntil       DateTime?            @map("follow_up_until")
+  /// Casos relacionados/duplicados (vínculo confirmado pelo triador)
+  linkedComplaintIds  String[]             @default([]) @map("linked_complaint_ids") @db.Uuid
+  /// Nulo para denúncia anônima
+  createdBy           String?              @map("created_by") @db.Uuid
+  createdAt           DateTime             @default(now()) @map("created_at")
+  updatedAt           DateTime             @updatedAt @map("updated_at")
+
+  tenant           Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  addenda          ComplaintAddendum[]
+  history          ComplaintStatusHistory[]
+  comments         ComplaintComment[]
+  recusals         ComplaintRecusal[]
+  messages         ComplaintMessage[]
+  attachments      Attachment[]
+  conflictFlags    ConflictFlag[]
+  accessGrants     ComplaintAccessGrant[]
+  externalAccesses ExternalAccess[]
+  identityReveals  IdentityReveal[]
+
+  @@index([tenantId, status])
+  @@map("complaints")
+}
+
+/// Complementos ao relato (somente inserção): o original nunca é alterado
+model ComplaintAddendum {
+  id            String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId      String         @map("tenant_id") @db.Uuid
+  complaintId   String         @map("complaint_id") @db.Uuid
+  authorType    AddendumAuthor @map("author_type")
+  authorId      String?        @map("author_id") @db.Uuid
+  content       String
+  integrityHash String         @map("integrity_hash")
+  createdAt     DateTime       @default(now()) @map("created_at")
+
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  complaint Complaint @relation(fields: [complaintId], references: [id], onDelete: Restrict)
+
+  @@index([complaintId])
+  @@map("complaint_addenda")
+}
+
+model ComplaintStatusHistory {
+  id             String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId       String           @map("tenant_id") @db.Uuid
+  complaintId    String           @map("complaint_id") @db.Uuid
+  /// Nulo na criação
+  previousStatus ComplaintStatus? @map("previous_status")
+  newStatus      ComplaintStatus  @map("new_status")
+  changedBy      String?          @map("changed_by") @db.Uuid
+  reason         String
+  createdAt      DateTime         @default(now()) @map("created_at")
+
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  complaint Complaint @relation(fields: [complaintId], references: [id], onDelete: Restrict)
+
+  @@index([complaintId])
+  @@map("complaint_status_history")
+}
+
+model ComplaintComment {
+  id          String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId    String            @map("tenant_id") @db.Uuid
+  complaintId String            @map("complaint_id") @db.Uuid
+  authorId    String            @map("author_id") @db.Uuid
+  content     String
+  visibility  CommentVisibility @default(INTERNAL)
+  createdAt   DateTime          @default(now()) @map("created_at")
+  updatedAt   DateTime          @updatedAt @map("updated_at")
+
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  complaint Complaint @relation(fields: [complaintId], references: [id], onDelete: Restrict)
+
+  @@index([complaintId])
+  @@map("complaint_comments")
+}
+
+model SystemSetting {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  key         String
+  value       String
+  description String?
+  /// Só chaves públicas são legíveis sem autenticação
+  isPublic    Boolean  @default(false) @map("is_public")
+  updatedBy   String?  @map("updated_by") @db.Uuid
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, key])
+  @@map("system_settings")
+}
+
+model AuditLog {
+  id              String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId        String      @map("tenant_id") @db.Uuid
+  userId          String?     @map("user_id") @db.Uuid
+  action          AuditAction
+  resource        String
+  resourceId      String?     @map("resource_id")
+  /// Sensível: mascarado para o papel platform_admin
+  details         Json?
+  /// Nulos em eventos originados por denunciantes anônimos
+  ipAddress       String?     @map("ip_address")
+  userAgent       String?     @map("user_agent")
+  timestamp       DateTime    @default(now())
+  /// Preenchidos por trigger (BEFORE INSERT): nenhum caminho grava sem seq/hash
+  seq             BigInt      @default(0)
+  rowHash         String      @default("") @map("row_hash")
+  sealId          String?     @map("seal_id") @db.Uuid
+  /// Evento originado por denunciante anônimo: o banco anula IP/UA e trunca o horário ao minuto
+  anonymousOrigin Boolean     @default(false) @map("anonymous_origin")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, seq])
+  @@index([tenantId, timestamp])
+  @@map("audit_logs")
+}
+
+model ComplaintRecusal {
+  id          String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId    String        @map("tenant_id") @db.Uuid
+  complaintId String        @map("complaint_id") @db.Uuid
+  userId      String        @map("user_id") @db.Uuid
+  reason      String
+  declaredBy  String?       @map("declared_by") @db.Uuid
+  origin      RecusalOrigin
+  createdAt   DateTime      @default(now()) @map("created_at")
+
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  complaint Complaint @relation(fields: [complaintId], references: [id], onDelete: Restrict)
+
+  @@unique([complaintId, userId])
+  @@map("complaint_recusals")
+}
+
+/// Suspeita de conflito: nunca altera a conta do usuário, só o acesso ao caso
+model ConflictFlag {
+  id           String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId     String            @map("tenant_id") @db.Uuid
+  complaintId  String            @map("complaint_id") @db.Uuid
+  userId       String            @map("user_id") @db.Uuid
+  matchType    ConflictMatchType @map("match_type")
+  status       ConflictStatus    @default(PENDING)
+  decidedBy    String?           @map("decided_by")
+  decidedAt    DateTime?         @map("decided_at")
+  decisionNote String?           @map("decision_note")
+  createdAt    DateTime          @default(now()) @map("created_at")
+
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  complaint Complaint @relation(fields: [complaintId], references: [id], onDelete: Restrict)
+
+  @@unique([complaintId, userId])
+  @@map("conflict_flags")
+}
+
+model ComplaintAccessGrant {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  complaintId String    @map("complaint_id") @db.Uuid
+  userId      String    @map("user_id") @db.Uuid
+  grantedBy   String    @map("granted_by") @db.Uuid
+  reason      String
+  expiresAt   DateTime  @map("expires_at")
+  revokedAt   DateTime? @map("revoked_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  complaint Complaint @relation(fields: [complaintId], references: [id], onDelete: Restrict)
+
+  @@index([complaintId, userId])
+  @@map("complaint_access_grants")
+}
+
+/// Acesso pontual do destinatário alternativo (sem conta): link único + TOTP, escopo de UM caso
+model ExternalAccess {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId       String    @map("tenant_id") @db.Uuid
+  complaintId    String    @map("complaint_id") @db.Uuid
+  recipientEmail String    @map("recipient_email")
+  /// 'SYSTEM' ou id do ADMIN
+  triggeredBy    String    @map("triggered_by")
+  reason         String
+  tokenHash      String    @unique @map("token_hash")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  expiresAt      DateTime  @map("expires_at")
+  linkUsedAt     DateTime? @map("link_used_at")
+  revokedAt      DateTime? @map("revoked_at")
+  lastUsedAt     DateTime? @map("last_used_at")
+  usedCount      Int       @default(0) @map("used_count")
+  failedAttempts Int       @default(0) @map("failed_attempts")
+
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  complaint Complaint @relation(fields: [complaintId], references: [id], onDelete: Restrict)
+
+  @@index([complaintId])
+  @@map("external_accesses")
+}
+
+/// Cada exibição do contato do denunciante identificado a uma pessoa
+model IdentityReveal {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  complaintId   String   @map("complaint_id") @db.Uuid
+  userId        String   @map("user_id") @db.Uuid
+  justification String
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  complaint Complaint @relation(fields: [complaintId], references: [id], onDelete: Restrict)
+
+  @@map("identity_reveals")
+}
+
+/// Canal seguro com o denunciante. Nunca guarda IP/UA; em caso anônimo os horários vão ao minuto (trigger).
+model ComplaintMessage {
+  id          String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// Ordem dos eventos (interna, nunca exposta): com horários ao minuto a ordem vem da sequência
+  seq         BigInt           @default(autoincrement())
+  tenantId    String           @map("tenant_id") @db.Uuid
+  complaintId String           @map("complaint_id") @db.Uuid
+  direction   MessageDirection
+  /// Nulo quando vem do denunciante ou é mensagem automática do sistema
+  authorId    String?          @map("author_id") @db.Uuid
+  content     String
+  readAt      DateTime?        @map("read_at")
+  createdAt   DateTime         @default(now()) @map("created_at")
+
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  complaint Complaint @relation(fields: [complaintId], references: [id], onDelete: Restrict)
+
+  @@index([complaintId, createdAt])
+  @@map("complaint_messages")
+}
+
+model Attachment {
+  id                 String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  seq                BigInt     @default(autoincrement())
+  tenantId           String     @map("tenant_id") @db.Uuid
+  complaintId        String     @map("complaint_id") @db.Uuid
+  /// Em denúncia anônima o nome original é descartado (pode identificar o denunciante)
+  filename           String
+  mimeType           String     @map("mime_type")
+  /// Tipo real detectado por assinatura (magic bytes)
+  detectedMime       String     @map("detected_mime")
+  size               Int
+  s3Key              String     @map("s3_key")
+  s3Bucket           String     @map("s3_bucket")
+  /// Hash do arquivo armazenado (o limpo, se houve remoção de metadados)
+  sha256Hash         String     @map("sha256_hash")
+  /// Hash do arquivo como recebido, guardado antes da limpeza (cadeia de custódia)
+  originalSha256Hash String?    @map("original_sha256_hash")
+  /// Motivo de ERROR/INFECTED (assinatura do vírus, falha na limpeza…)
+  scanDetail         String?    @map("scan_detail")
+  uploadedBy         String?    @map("uploaded_by") @db.Uuid
+  uploadedAt         DateTime   @default(now()) @map("uploaded_at")
+  deletedAt          DateTime?  @map("deleted_at")
+  deletedBy          String?    @map("deleted_by") @db.Uuid
+  scanStatus         ScanStatus @default(PENDING) @map("scan_status")
+  scannedAt          DateTime?  @map("scanned_at")
+  metadataStripped   Boolean    @default(false) @map("metadata_stripped")
+
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  complaint Complaint @relation(fields: [complaintId], references: [id], onDelete: Restrict)
+
+  @@index([complaintId])
+  @@map("attachments")
+}
+
+/// Sessão da equipe/REPORTER: token opaco rotativo (só o hash é guardado)
+model RefreshToken {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId     String    @map("tenant_id") @db.Uuid
+  userId       String    @map("user_id") @db.Uuid
+  tokenHash    String    @unique @map("token_hash")
+  /// Cadeia de rotação: reuso de um token já rotacionado revoga tudo do usuário
+  familyId     String    @map("family_id") @db.Uuid
+  expiresAt    DateTime  @map("expires_at")
+  revokedAt    DateTime? @map("revoked_at")
+  replacedById String?   @map("replaced_by_id") @db.Uuid
+  ipAddress    String?   @map("ip_address")
+  userAgent    String?   @map("user_agent")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  lastUsedAt   DateTime? @map("last_used_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt])
+  @@map("refresh_tokens")
+}
+
+enum AnchorType {
+  TSA_RFC3161
+  WORM_BUCKET
+}
+
+/// Selo periódico da trilha: raiz Merkle do intervalo [fromSeq,toSeq], encadeado ao selo anterior
+model AuditSeal {
+  id           String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId     String      @map("tenant_id") @db.Uuid
+  fromSeq      BigInt      @map("from_seq")
+  toSeq        BigInt      @map("to_seq")
+  /// Buracos de sequência vistos ao selar (benignos em rollback; alerta se excederem o esperado)
+  gaps         BigInt[]
+  rowCount     Int         @map("row_count")
+  merkleRoot   String      @map("merkle_root")
+  prevSealHash String?     @map("prev_seal_hash")
+  sealHash     String      @map("seal_hash")
+  sealedAt     DateTime    @default(now()) @map("sealed_at")
+  anchorType   AnchorType? @map("anchor_type")
+  anchorRef    String?     @map("anchor_ref")
+  anchoredAt   DateTime?   @map("anchored_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, toSeq])
+  @@map("audit_seals")
+}
+
+/// Chave de dados do tenant (DEK) protegida pela chave-mestra (envelope). Versionada para rotação.
+model TenantKey {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId   String    @map("tenant_id") @db.Uuid
+  version    Int
+  wrappedKey String    @map("wrapped_key")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  retiredAt  DateTime? @map("retired_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, version])
+  @@map("tenant_keys")
+}
+
+model Notification {
+  id             String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId       String           @map("tenant_id") @db.Uuid
+  userId         String           @map("user_id") @db.Uuid
+  type           NotificationType
+  title          String
+  /// Sem detalhes da denúncia (e-mail e tela mostram protocolo/tipo e link)
+  message        String
+  data           Json?
+  relatedId      String?          @map("related_id")
+  relatedType    String?          @map("related_type")
+  /// false = só e-mail (o usuário desligou o in-app para este tipo)
+  inApp          Boolean          @default(true) @map("in_app")
+  isRead         Boolean          @default(false) @map("is_read")
+  readAt         DateTime?        @map("read_at")
+  createdAt      DateTime         @default(now()) @map("created_at")
+  /// E-mail pendente é enviado pelo sweep (nunca no instante de um evento anônimo)
+  /// Atraso aleatório do e-mail sobre denúncia anônima (o provedor não pode registrar o instante do evento)
+  emailSendAfter DateTime?        @map("email_send_after")
+  emailPending   Boolean          @default(false) @map("email_pending")
+  emailSent      Boolean          @default(false) @map("email_sent")
+  emailSentAt    DateTime?        @map("email_sent_at")
+  emailError     String?          @map("email_error")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  @@index([userId, isRead, createdAt])
+  @@index([emailPending])
+  @@map("notifications")
+}
+
+model UserPreferences {
+  id                 String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId           String             @map("tenant_id") @db.Uuid
+  userId             String             @unique @map("user_id") @db.Uuid
+  emailNotifications Boolean            @default(true) @map("email_notifications")
+  inAppNotifications Boolean            @default(true) @map("in_app_notifications")
+  /// Tipos silenciados por canal (críticos ignoram silenciamento)
+  emailMutedTypes    NotificationType[] @default([]) @map("email_muted_types")
+  inAppMutedTypes    NotificationType[] @default([]) @map("in_app_muted_types")
+  emailDigest        Boolean            @default(false) @map("email_digest")
+  emailDigestTime    String             @default("09:00") @map("email_digest_time")
+  updatedAt          DateTime           @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  @@map("user_preferences")
+}
+
+/// Um alerta de SLA por (denúncia, tipo, nível): garante que o job periódico não repita
+model SlaAlert {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  complaintId String   @map("complaint_id") @db.Uuid
+  kind        SlaKind
+  level       SlaLevel
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  @@unique([complaintId, kind, level])
+  @@map("sla_alerts")
+}

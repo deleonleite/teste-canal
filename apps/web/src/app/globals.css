@@ -1,0 +1,48 @@
+@import '@fontsource-variable/inter';
+@import '@ouvion/ui/tokens.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    /* Safe area: elementos fixos usam env(safe-area-inset-*) (notch / barra de gestos). */
+    -webkit-text-size-adjust: 100%;
+    color-scheme: light dark;
+  }
+  :root[data-theme='light'] { color-scheme: light; }
+  :root[data-theme='dark'] { color-scheme: dark; }
+
+  body {
+    @apply bg-canvas font-sans text-body text-fg antialiased;
+    font-feature-settings: 'cv11', 'ss01';
+  }
+
+  /* Foco sempre visível (WCAG 2.4.7) e legível nos dois temas. */
+  :focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+
+  ::selection { background: var(--brand); color: var(--on-brand); }
+
+  h1 { @apply text-h1 text-fg; }
+  h2 { @apply text-h2 text-fg; }
+  h3 { @apply text-h3 text-fg; }
+
+  /* Alvo de toque mínimo de 44px também em links de navegação isolados. */
+  a { @apply text-brand-text underline-offset-4; }
+  a:hover { @apply underline; }
+}
+
+@layer utilities {
+  .pb-safe { padding-bottom: max(1rem, env(safe-area-inset-bottom)); }
+  .pt-safe { padding-top: env(safe-area-inset-top); }
+  .px-safe { padding-left: max(1rem, env(safe-area-inset-left)); padding-right: max(1rem, env(safe-area-inset-right)); }
+}
+
+/* Impressão da tela de confirmação: só o bloco com protocolo e chave, sem navegação. */
+@media print {
+  body * { visibility: hidden; }
+  .print-area, .print-area * { visibility: visible; }
+  .print-area { position: absolute; inset: 0; padding: 2rem; }
+  .no-print { display: none !important; }
+}

@@ -1,0 +1,127 @@
+/*
+ * OuviON — tokens do shell (PROMPTFRONT §2–§4). Fonte única: os testes de contraste leem ESTE arquivo.
+ * Nível 0 (semânticas) nunca é sobrescrito pelo tenant; nível 1 (marca) só define --brand*, ver brand.css.
+ * Desvio deliberado do documento: --text-tertiary foi escurecido (claro) / clareado (escuro) para cumprir
+ * WCAG AA 4,5:1 em timestamps e metadados; o valor original do documento (#8B93A1) dava ~3,2:1.
+ */
+:root {
+  --bg-canvas: #f7f8fa;
+  --bg-surface: #ffffff;
+  --bg-surface-sunken: #eef0f3;
+  --border-default: #e2e5ea;
+  --border-strong: #b9c0cc;
+  --text-primary: #14181f;
+  --text-secondary: #5b6474;
+  --text-tertiary: #5f6878;
+
+  --status-success: #1b7a52;
+  --status-danger: #c2372b;
+  --status-warning: #8a5a06;
+  --status-info: #2563a8;
+  --status-neutral: #5b6474;
+  --priority-critical: #8b1e1e;
+  --priority-high: #c2372b;
+  --priority-medium: #8a5a06;
+  --priority-low: #5b6474;
+
+  /* Fundo suave dos badges (mesma matiz, baixa saturação): nunca a única pista, sempre com ícone + texto */
+  --tint-success: #e7f4ed;
+  --tint-danger: #fbeae8;
+  --tint-warning: #fbf1dd;
+  --tint-info: #e6eef8;
+  --tint-neutral: #eef0f3;
+  --tint-critical: #f6e4e4;
+
+  --focus-ring: #2563a8;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-modal: 0 4px 16px rgba(0, 0, 0, 0.08);
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --duration: 150ms;
+  --font-scale: 1;
+}
+
+/* Escuro: por preferência do sistema, salvo se o usuário escolheu claro explicitamente. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --bg-canvas: #0e1116;
+    --bg-surface: #161a21;
+    --bg-surface-sunken: #1d222b;
+    --border-default: #262b35;
+    --border-strong: #465165;
+    --text-primary: #f2f4f7;
+    --text-secondary: #9aa3b2;
+    --text-tertiary: #8b94a5;
+
+    --status-success: #3dbb85;
+    --status-danger: #ee7266;
+    --status-warning: #e0a13a;
+    --status-info: #6ea6e8;
+    --status-neutral: #9aa3b2;
+    --priority-critical: #f08a8a;
+    --priority-high: #ee7266;
+    --priority-medium: #e0a13a;
+    --priority-low: #9aa3b2;
+
+    --tint-success: #10261c;
+    --tint-danger: #2b1512;
+    --tint-warning: #2b2110;
+    --tint-info: #111f31;
+    --tint-neutral: #1d222b;
+    --tint-critical: #2d1414;
+    --focus-ring: #6ea6e8;
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-modal: 0 4px 16px rgba(0, 0, 0, 0.5);
+  }
+}
+
+:root[data-theme='dark'] {
+  --bg-canvas: #0e1116;
+  --bg-surface: #161a21;
+  --bg-surface-sunken: #1d222b;
+  --border-default: #262b35;
+  --border-strong: #465165;
+  --text-primary: #f2f4f7;
+  --text-secondary: #9aa3b2;
+  --text-tertiary: #8b94a5;
+
+  --status-success: #3dbb85;
+  --status-danger: #ee7266;
+  --status-warning: #e0a13a;
+  --status-info: #6ea6e8;
+  --status-neutral: #9aa3b2;
+  --priority-critical: #f08a8a;
+  --priority-high: #ee7266;
+  --priority-medium: #e0a13a;
+  --priority-low: #9aa3b2;
+
+  --tint-success: #10261c;
+  --tint-danger: #2b1512;
+  --tint-warning: #2b2110;
+  --tint-info: #111f31;
+  --tint-neutral: #1d222b;
+  --tint-critical: #2d1414;
+  --focus-ring: #6ea6e8;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-modal: 0 4px 16px rgba(0, 0, 0, 0.5);
+}
+
+/* Contraste alto (preferência pessoal, nível 2): bordas e textos mais fortes, independente de claro/escuro. */
+:root[data-contrast='high'] {
+  --border-default: var(--border-strong);
+  --text-secondary: var(--text-primary);
+  --text-tertiary: var(--text-primary);
+}
+
+/* Movimento zerado por preferência do sistema ou da conta. */
+@media (prefers-reduced-motion: reduce) {
+  :root { --duration: 0ms; }
+}
+:root[data-motion='off'] { --duration: 0ms; }
+:root[data-motion='off'] *, :root[data-motion='off'] *::before, :root[data-motion='off'] *::after {
+  transition-duration: 0ms !important;
+  animation-duration: 0ms !important;
+}
