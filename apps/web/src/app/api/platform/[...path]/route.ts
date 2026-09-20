@@ -16,6 +16,7 @@ const ALLOWED = [
   new RegExp(`^tenants(\\/${UUID}(\\/(suspend|reactivate|resend-invite))?)?$`),
   new RegExp(`^users(\\/${UUID}(\\/reset-password)?)?$`),
   /^audit$/,
+  new RegExp(`^break-glass(\\/${UUID}(\\/(approve|deny|revoke|read))?)?$`),
 ];
 
 const PASS_REQUEST = ['content-type', 'accept'];

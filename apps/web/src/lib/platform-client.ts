@@ -108,3 +108,42 @@ export interface PlatformAuditPage {
   data: PlatformAuditRow[];
   pagination: { page: number; limit: number; total: number; totalPages: number };
 }
+
+export interface BreakGlassRow {
+  id: string;
+  tenantId: string;
+  tenantName: string;
+  tenantSlug: string | null;
+  scope: 'COMPLAINT' | 'ATTACHMENT';
+  target: string;
+  reason: string;
+  ticketRef: string;
+  state: 'PENDING' | 'ACTIVE' | 'EXPIRED' | 'DENIED' | 'REVOKED';
+  requestedBy: string;
+  requestedByName: string | null;
+  approvedByName: string | null;
+  createdAt: string;
+  approvedAt: string | null;
+  expiresAt: string | null;
+  decisionNote: string | null;
+  uses: number;
+}
+
+export type BreakGlassContent =
+  | {
+      kind: 'COMPLAINT';
+      id: string;
+      protocol: string;
+      type: string;
+      priority: string;
+      status: string;
+      title: string;
+      description: string;
+      involvedPeople: string[];
+      witnesses: string[];
+      incidentDate: string | null;
+      location: string | null;
+      isAnonymous: boolean;
+      createdAt: string;
+    }
+  | { kind: 'ATTACHMENT'; filename: string; mimeType: string; size: number; url: string; expiresInSeconds: number };
