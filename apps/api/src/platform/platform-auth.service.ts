@@ -167,6 +167,19 @@ export class PlatformAuthService {
     return step > lastStep ? step : null;
   }
 
+  /**
+   * Prova de 2º fator RECENTE para ações críticas (aprovar quebra de vidro): o código tem de ser digitado agora e
+   * não pode ser reaproveitado (o passo avança), então não dá para usar o mesmo código do login.
+   */
+  async assertFreshMfa(userId: string, code: string): Promise<void> {
+    const user = await this.prisma.db.platformUser.findUniqueOrThrow({ where: { id: userId } });
+    if (!user.mfaEnabled || !user.mfaSecretEnc) throw new UnauthorizedException('Código inválido');
+    const secret = this.kek.unwrap(user.mfaSecretEnc, `platform-mfa:${user.id}`).toString('utf8');
+    const step = this.stepOf(code, secret, user.mfaLastStep);
+    const ok = step !== null && (await this.prisma.db.platformUser.updateMany({ where: { id: user.id, mfaLastStep: { lt: step } }, data: { mfaLastStep: step } })).count === 1;
+    if (!ok) throw new UnauthorizedException('Código inválido ou já utilizado');
+  }
+
   async enroll(enrollToken: string) {
     const userId = await this.verifyScoped(enrollToken, 'platform-mfa-enroll');
     const user = await this.prisma.db.platformUser.findUniqueOrThrow({ where: { id: userId } });

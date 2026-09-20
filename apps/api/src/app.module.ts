@@ -16,6 +16,7 @@ import { AttachmentSweepHandler, JobHandlers } from './worker/handlers';
 import { createAnchor, Anchor } from './audit/anchor';
 import { AuditController } from './audit/audit.controller';
 import { BrandingController, ManageBrandingController } from './branding/branding.controller';
+import { PlatformBreakGlassController } from './platform/platform-break-glass.controller';
 import { PlatformAdminController } from './platform/platform-admin.controller';
 import { PlatformAuditService } from './platform/platform-audit.service';
 import { PlatformAuthController } from './platform/platform-auth.controller';
@@ -84,6 +85,7 @@ import { UsersController } from './users/users.controller';
     ManageBrandingController,
     PlatformAuthController,
     PlatformAdminController,
+    PlatformBreakGlassController,
   ],
   providers: [
     PrismaService,

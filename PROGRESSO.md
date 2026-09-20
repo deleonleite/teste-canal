@@ -392,8 +392,27 @@ Como rodar: `docker compose -f infra/docker/docker-compose.yml up -d postgres` �
 - [x] **Dashboard e Assinaturas com dados de demonstração rotulados** ("Dados de demonstração") — nada mock aparece como métrica real; empresas recentes e contagens do dashboard são reais
 - [x] e2e: login real com TOTP, primeiro acesso real de usuário novo, perfis (SUPPORT/FINANCIAL), suspensão ponta a ponta, CSRF, axe AA em todas as telas
 
+## Painel SUPER_ADMIN — Etapa B: Nova Empresa com convite (§4.2.1) — *concluída; API 181 testes, e2e 55 (7 novos), unit 25*
+
+### Backend
+- [x] Migration `tenant_invites`: `users.must_change_password`, tabela de convites (só o **hash** do token; RLS por empresa) e função `platform_provision_tenant` (SECURITY DEFINER): o papel da plataforma **não** tem GRANT em `users` nem cria sequences — este é o único caminho e devolve só ids
+- [x] `POST /platform/tenants` (SUPER_ADMIN): cria empresa em **TRIAL** + primeiro ADMIN. **Convite por link é o padrão**: token de 256 bits, uso único, 72 h, e-mail ao administrador; a plataforma **nunca conhece a senha** (o banco guarda o hash de um valor aleatório até a pessoa definir a dela)
+- [x] **Senha temporária** = exceção auditada: exige motivo, é gerada pelo sistema (ou digitada) e **mostrada uma única vez**; `TENANT_ADMIN_TEMP_PASSWORD_ISSUED` (gravidade alta) com o motivo e **sem a senha**; senha digitada nunca volta na resposta
+- [x] Reenvio (`/resend-invite`): novo token, o anterior é revogado; recusado depois do aceite
+- [x] Aceite público `/public/onboarding/admin-invite`: mesma mensagem para inválido/vencido/usado/de outra empresa; política de senha; limite por IP
+- [x] Login de empresa com senha temporária: `passwordChangeRequired` **antes** de sessão e de 2º fator; troca exige política e senha diferente
+- [x] **Ativação** (`/onboarding/activation`, `/dpo`, `/activate`): só sai de TRIAL com **ADMIN com MFA + destinatário alternativo verificado (e-mail + TOTP) + DPO informado**; não ativa duas vezes; o DPO passa a aparecer no canal público
+- [x] E-mail do destinatário alternativo agora aponta para uma página real; em dev/teste (e-mail em memória) as respostas trazem `devInviteUrl`/`devConfirmUrl` — **nunca em produção**
+
+### Frontend
+- [x] Plataforma: botão **Nova empresa** (só SUPER_ADMIN) com convite pré-selecionado, sugestão de identificador a partir do nome, troca para senha temporária só por clique consciente (com motivo), resultado (convite enviado / senha mostrada uma vez com copiar); detalhe da empresa mostra o estado do convite e **Reenviar convite**
+- [x] Empresa: `/{slug}/convite` (a pessoa define a própria senha, sessão aberta e, se exigido, cadastro do 2º fator com QR local + códigos de recuperação), `/{slug}/destinatario` (destinatário sem conta confirma o e-mail e cadastra o TOTP), `/{slug}/painel/ativacao` (checklist com os 3 requisitos + botão Ativar) e **faixa "período de teste"** em todo o painel do ADMIN enquanto TRIAL
+- [x] Login da empresa passou a tratar a troca da senha temporária
+- [x] e2e ponta a ponta reais: convite → senha própria → destinatário alternativo com TOTP real → DPO → **empresa ATIVA** (canal público mostra o DPO); link de uso único; reenvio invalida o antigo; senha temporária com troca obrigatória e auditoria sem a senha; suporte não cria empresa; axe AA
+- [ ] Desvio: o campo **plano** do modal não existe (não há modelo de plano/assinatura no backend; entra com a fase 8)
+- [ ] O 2º fator do ADMIN convidado é exigido pela política; nos e2e o MFA está desligado por configuração, então a etapa real de cadastro é coberta por teste de API (com MFA ligado) e por tela com API simulada
+
 ### Ainda não feito (próximas etapas)
-- [ ] **Nova Empresa** com convite por link (72 h, uso único, ADMIN define senha + MFA + destinatário alternativo + DPO antes de sair de TRIAL), opção de senha temporária auditada, reenvio de convite (§4.2.1)
 - [ ] **Quebra de vidro** completa (§5): solicitação, 2º SUPER_ADMIN aprovando com MFA recente, janela de 1 h escopada ao recurso, aviso ao ADMIN da empresa, auditoria dupla, revogação automática
 - [ ] Configurações globais: abas e valores reais (senha, tentativas, timeout, whitelist de IP, trial, limites por plano, SMTP, pagamento)
 - [ ] Assinaturas/planos/MRR reais e limites de plano (fase 8 do roadmap); gráficos do dashboard; passkey como alternativa ao TOTP; whitelist de IP para SUPER_ADMIN

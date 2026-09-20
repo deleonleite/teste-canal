@@ -8,12 +8,12 @@ export type ComplaintConclusion = (typeof ComplaintConclusion)[number];
 export const NotificationType = [
   'COMPLAINT_CREATED', 'COMPLAINT_ASSIGNED', 'COMPLAINT_STATUS_CHANGED', 'COMPLAINT_COMMENT',
   'ATTACHMENT_UPLOADED', 'DOSSIER_GENERATED', 'SYSTEM_ALERT', 'DEADLINE_REMINDER', 'REPORTER_MESSAGE',
-  'SLA_WARNING', 'SLA_BREACHED', 'CONFLICT_SUSPECTED', 'RECUSAL_REASSIGNED',
+  'SLA_WARNING', 'SLA_BREACHED', 'CONFLICT_SUSPECTED', 'RECUSAL_REASSIGNED', 'BREAK_GLASS_ACCESS',
 ] as const;
 export type NotificationType = (typeof NotificationType)[number];
 
 /** Notificações críticas ignoram preferências de silenciamento (doc §5.8). */
-export const CRITICAL_NOTIFICATIONS: readonly NotificationType[] = ['SLA_BREACHED', 'CONFLICT_SUSPECTED', 'RECUSAL_REASSIGNED'];
+export const CRITICAL_NOTIFICATIONS: readonly NotificationType[] = ['SLA_BREACHED', 'CONFLICT_SUSPECTED', 'RECUSAL_REASSIGNED', 'BREAK_GLASS_ACCESS'];
 
 export const CLOSED_STATUSES: readonly ComplaintStatus[] = ['RESOLVED', 'DISMISSED'];
 

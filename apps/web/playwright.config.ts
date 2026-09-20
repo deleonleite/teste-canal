@@ -34,6 +34,8 @@ export default defineConfig({
         BFF_SHARED_SECRET: BFF_SECRET,
         RATE_LIMIT_DISABLED: 'true',
         MFA_ENFORCEMENT: 'off',
+        // Links de convite/destinatário (e-mail em memória no e2e) apontam para o Next local.
+        PUBLIC_WEB_URL: WEB,
       },
     },
     {

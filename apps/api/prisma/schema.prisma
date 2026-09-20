@@ -141,6 +141,7 @@ enum NotificationType {
   SLA_BREACHED
   CONFLICT_SUSPECTED
   RECUSAL_REASSIGNED
+  BREAK_GLASS_ACCESS
 }
 
 enum SlaKind {
@@ -729,6 +730,8 @@ enum PlatformAuditAction {
   BREAK_GLASS_REQUESTED
   BREAK_GLASS_APPROVED
   BREAK_GLASS_USED
+  BREAK_GLASS_DENIED
+  BREAK_GLASS_REVOKED
   TENANT_ADMIN_TEMP_PASSWORD_ISSUED
   TENANT_INVITE_SENT
 }
@@ -823,4 +826,59 @@ model TenantInvite {
 
   @@index([tenantId, createdAt])
   @@map("tenant_invites")
+}
+
+// ── Quebra de vidro (acesso excepcional a UM item de uma empresa) ───────────────────────────────────
+// O papel platform_admin só LÊ estas tabelas. Toda escrita e toda leitura de conteúdo passam por funções
+// SECURITY DEFINER que checam janela, aprovador e escopo DENTRO do banco e registram a trilha nos dois lados.
+
+enum BreakGlassScope {
+  COMPLAINT
+  ATTACHMENT
+}
+
+enum BreakGlassStatus {
+  PENDING
+  APPROVED
+  DENIED
+  REVOKED
+}
+
+model BreakGlassRequest {
+  id            String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId      String           @map("tenant_id") @db.Uuid
+  scope         BreakGlassScope
+  /// Id do item pedido (denúncia ou anexo), resolvido dentro do banco a partir do protocolo informado
+  resourceId    String           @map("resource_id") @db.Uuid
+  /// Rótulo sem conteúdo: protocolo (e nome do arquivo, no caso de anexo)
+  resourceLabel String           @map("resource_label")
+  requestedBy   String           @map("requested_by") @db.Uuid
+  reason        String
+  ticketRef     String           @map("ticket_ref")
+  status        BreakGlassStatus @default(PENDING)
+  approvedBy    String?          @map("approved_by") @db.Uuid
+  approvedAt    DateTime?        @map("approved_at")
+  /// No máximo 1 hora depois da aprovação; sem prorrogação (novo pedido = novo registro)
+  expiresAt     DateTime?        @map("expires_at")
+  decisionNote  String?          @map("decision_note")
+  revokedAt     DateTime?        @map("revoked_at")
+  createdAt     DateTime         @default(now()) @map("created_at")
+
+  uses BreakGlassUse[]
+
+  @@index([tenantId, createdAt])
+  @@index([status])
+  @@map("break_glass_requests")
+}
+
+model BreakGlassUse {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  requestId String   @map("request_id") @db.Uuid
+  usedBy    String   @map("used_by") @db.Uuid
+  usedAt    DateTime @default(now()) @map("used_at")
+
+  request BreakGlassRequest @relation(fields: [requestId], references: [id], onDelete: Restrict)
+
+  @@index([requestId])
+  @@map("break_glass_uses")
 }
