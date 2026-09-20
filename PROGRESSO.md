@@ -412,8 +412,28 @@ Como rodar: `docker compose -f infra/docker/docker-compose.yml up -d postgres` �
 - [ ] Desvio: o campo **plano** do modal não existe (não há modelo de plano/assinatura no backend; entra com a fase 8)
 - [ ] O 2º fator do ADMIN convidado é exigido pela política; nos e2e o MFA está desligado por configuração, então a etapa real de cadastro é coberta por teste de API (com MFA ligado) e por tela com API simulada
 
+## Painel SUPER_ADMIN — Etapa C: Quebra de vidro (§5) — *concluída; API 192 testes, e2e 59 (4 novos), unit 25*
+
+### Backend (migration `break_glass`)
+- [x] **A regra mora no BANCO**, não só na API: o papel da plataforma só LÊ `break_glass_requests`/`break_glass_uses`; toda escrita e **toda leitura de conteúdo** passam por funções `SECURITY DEFINER` (`platform_bg_create/approve/deny/revoke/read`) que conferem aprovador, janela e dono — testado com **SQL direto** (`permission denied` ao tentar se auto-aprovar; a função recusa solicitante como aprovador, janela > 60 min e leitura sem aprovação)
+- [x] **Pedido**: SUPPORT ou SUPER_ADMIN, com motivo (≥ 20) e referência do chamado; o item é resolvido pelo **protocolo** (que o cliente informa) sem devolver conteúdo — o painel nunca lista denúncias; escopo `COMPLAINT` ou `ATTACHMENT` (protocolo + nome do arquivo)
+- [x] **Aprovação**: só **outro SUPER_ADMIN**, com **código do 2º fator digitado na hora** (MFA recente; o código do login e o já usado não valem) e janela de **5 a 60 minutos**; sem prorrogação (aprovar de novo é recusado; novo acesso = novo pedido)
+- [x] **Uso**: só quem pediu; cada abertura é um registro de uso e a função grava **na mesma transação** a trilha da plataforma (`BREAK_GLASS_USED`, gravidade crítica) e a da empresa; devolve a denúncia **sem identidade do denunciante, mensagens nem comentários**; anexo só se já verificado, por link temporário de 5 min sem expor a chave do objeto
+- [x] **Expiração automática**: a janela é conferida a cada leitura (termina sozinha); revogação antecipada por SUPER_ADMIN
+- [x] **Aviso imediato ao ADMIN da empresa**: notificação in-app **crítica** (nova `BREAK_GLASS_ACCESS`, ignora silenciamento) + e-mail, com motivo, quem pediu, quem aprovou e o item
+- [x] **Auditoria dupla**: `PlatformAuditAction` (REQUESTED/APPROVED/DENIED/REVOKED/USED, gravidade HIGH/CRITICAL) **e** `BREAK_GLASS_PLATFORM` na auditoria da empresa (fases: solicitado, aprovado, recusado, revogado, aberto), sem nenhum dado do caso
+- [x] Correção achada no e2e: código de 2º fator errado na aprovação agora volta 400 (não 401, que a tela lia como "sessão expirada"); a tentativa falha é auditada
+
+### Frontend
+- [x] Detalhe da empresa: **Solicitar acesso de suporte** (SUPER_ADMIN e SUPPORT) com escopo, protocolo, motivo e chamado
+- [x] `/admin/quebra-de-vidro`: pendentes / ativos / histórico; SUPER_ADMIN aprova (duração + código novo), recusa e revoga com justificativa; SUPPORT vê só os próprios pedidos e nunca o botão de aprovar; atalho e contagem no Dashboard
+- [x] `/admin/quebra-de-vidro/[id]`: faixa de aviso, **contagem regressiva**, conteúdo só carregado por clique (cada abertura é um uso) e **some da tela quando a janela acaba ou é revogada**; só quem pediu abre
+- [x] Auditoria da plataforma: linhas de quebra de vidro com borda/destaque próprio e gravidade; auditoria da EMPRESA passa a mostrar quem pediu, quem aprovou, o motivo e quem abriu
+- [x] e2e ponta a ponta: pedido → aprovação por outro super admin com código novo (minutos e código inválidos recusados) → uso → **o cliente vê a notificação crítica e o registro na própria auditoria** → revogação → conteúdo some; recusa com justificativa; auto-aprovação recusada; FINANCIAL sem acesso; axe AA
+- [ ] Limites desta versão: escopo só de denúncia ou anexo (dossiê entra com a fase 5B); o e-mail ao ADMIN sai pelo mesmo envio pendente das notificações (precisa do worker rodando); a lista de pedidos atualiza a cada 20 s
+
 ### Ainda não feito (próximas etapas)
-- [ ] **Quebra de vidro** completa (§5): solicitação, 2º SUPER_ADMIN aprovando com MFA recente, janela de 1 h escopada ao recurso, aviso ao ADMIN da empresa, auditoria dupla, revogação automática
+- [ ] ~~Quebra de vidro~~ (feita acima) completa (§5): solicitação, 2º SUPER_ADMIN aprovando com MFA recente, janela de 1 h escopada ao recurso, aviso ao ADMIN da empresa, auditoria dupla, revogação automática
 - [ ] Configurações globais: abas e valores reais (senha, tentativas, timeout, whitelist de IP, trial, limites por plano, SMTP, pagamento)
 - [ ] Assinaturas/planos/MRR reais e limites de plano (fase 8 do roadmap); gráficos do dashboard; passkey como alternativa ao TOTP; whitelist de IP para SUPER_ADMIN
 - [ ] Tela de troca da própria senha do operador; `PLATFORM_DATABASE_URL`/`PLATFORM_JWT_SECRET` em produção (o código exige)

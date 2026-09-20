@@ -147,7 +147,7 @@ test.describe('perfis internos', () => {
       await expect(page.getByText('Garantia de privacidade: este painel não lê denúncias')).toBeVisible();
       const body = await page.locator('main').innerText();
       expect(body).not.toMatch(/Relato para contar nas estatísticas|Suspeita de fraude/); // nunca conteúdo
-      await expect(page.getByRole('button', { name: 'Solicitar acesso de suporte' })).toBeDisabled();
+      await expect(page.getByRole('button', { name: 'Solicitar acesso de suporte' })).toBeEnabled(); // agora abre o fluxo de quebra de vidro
       await expectAccessible(page, 'detalhe da empresa');
     });
 
